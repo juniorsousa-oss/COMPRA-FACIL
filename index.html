@@ -4,27 +4,3492 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#111827">
-<title>Compra Fácil V6</title>
+<title>Compra Fácil V3</title>
+
 <style>
-:root{--bg:#f4f6f8;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--primary:#111827;--accent:#2563eb;--ok:#15803d;--danger:#b91c1c}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Arial,sans-serif}.app{max-width:760px;margin:auto;min-height:100vh;padding-bottom:30px}header{background:var(--primary);color:#fff;padding:18px;position:sticky;top:0;z-index:5}.brand{font-size:22px;font-weight:850}.sub{font-size:12px;color:#cbd5e1;margin-top:3px}.container{padding:15px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px;margin-top:15px}.metric-label,.small{font-size:12px;color:var(--muted)}.metric{font-size:22px;font-weight:850;margin-top:5px}.ok{color:var(--ok)}.danger{color:var(--danger)}button,input,select{font:inherit}button{border:0;cursor:pointer}.primary{width:100%;background:var(--accent);color:#fff;border-radius:12px;padding:13px;font-weight:800}.secondary{background:#eef2f7;color:#111827;border-radius:10px;padding:10px 12px;font-weight:700}.section-title{display:flex;justify-content:space-between;align-items:center;gap:8px}.section-title h2{font-size:16px;margin:0}.product{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}.product:last-child{border:0}.check{width:26px;height:26px;border:2px solid #9ca3af;border-radius:8px;background:#fff}.check.done{background:var(--ok);border-color:var(--ok);color:#fff}.info{flex:1}.name{font-weight:750}.strike{text-decoration:line-through;color:#9ca3af}.price{font-weight:800}.remove{background:#fee2e2;color:#991b1b;padding:8px;border-radius:8px}.empty{text-align:center;color:var(--muted);padding:25px}.modal{position:fixed;inset:0;background:#0008;display:none;place-items:end center;z-index:20}.modal.show{display:grid}.modalbox{background:#fff;width:min(760px,100%);border-radius:20px 20px 0 0;padding:18px;max-height:90vh;overflow:auto}.modalhead{display:flex;justify-content:space-between}.close{background:#eef2f7;border-radius:50%;width:34px;height:34px;font-size:20px}input,select{width:100%;padding:11px;border:1px solid #d1d5db;border-radius:10px;margin:5px 0 10px}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.compare{padding:12px;border-radius:12px;background:#f3f4f6;margin:10px 0}.tabs{display:flex;gap:8px;overflow:auto;margin-top:15px}.tabs button{white-space:nowrap}.hidden{display:none!important}@media(min-width:761px){.modal{place-items:center}.modalbox{border-radius:20px;width:580px}}
-</style></head>
-<body><div class="app"><header><div class="brand">Compra Fácil</div><div class="sub">V6 · fluxo de compra</div></header><main class="container">
-<div class="grid"><div class="card"><div class="metric-label">Valor em caixa</div><div id="budget" class="metric">R$ 0,00</div></div><div class="card"><div class="metric-label">Valor estimado</div><div id="estimated" class="metric">R$ 0,00</div></div><div class="card"><div class="metric-label">Valor real</div><div id="real" class="metric ok">R$ 0,00</div></div><div class="card"><div class="metric-label">Itens</div><div id="count" class="metric">0 / 0</div></div></div>
-<div class="card"><div class="section-title"><h2>Lista atual</h2><button class="secondary" onclick="addProduct()">+ Produto</button></div><div id="list"></div></div>
-<div class="tabs"><button class="secondary" onclick="setBudget()">💰 Caixa</button><button class="secondary" onclick="usual()">Lista habitual</button><button class="secondary" onclick="clearList()">Limpar lista</button></div>
-</main></div>
-<div id="modal" class="modal"><div class="modalbox"><div class="modalhead"><h3 id="title">Confirmar compra</h3><button class="close" onclick="closeModal()">×</button></div><div id="productName" class="name"></div><label>Quantidade</label><input id="qty" type="number" min=".01" step=".01"><label>Preço unitário atual</label><input id="price" type="number" min="0" step=".01" oninput="compare()"><div id="comparison" class="compare"></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="confirmBuy()">Confirmar compra</button></div></div></div>
+:root{
+  --bg:#f4f6f8;
+  --card:#fff;
+  --text:#111827;
+  --muted:#6b7280;
+  --line:#e5e7eb;
+  --primary:#111827;
+  --accent:#2563eb;
+  --ok:#15803d;
+  --warn:#b45309;
+  --danger:#b91c1c;
+}
+
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:Inter,system-ui,Arial,sans-serif;
+}
+
+button,input,select{font:inherit}
+
+button{
+  border:0;
+  cursor:pointer;
+}
+
+.app{
+  max-width:760px;
+  margin:auto;
+  min-height:100vh;
+  padding-bottom:82px;
+}
+
+header{
+  background:var(--primary);
+  color:#fff;
+  padding:18px;
+  position:sticky;
+  top:0;
+  z-index:8;
+}
+
+.top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+}
+
+.brand{
+  font-size:22px;
+  font-weight:850;
+}
+
+.sub{
+  font-size:12px;
+  color:#cbd5e1;
+  margin-top:3px;
+}
+
+.container{
+  padding:15px;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+
+.card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:15px;
+  box-shadow:0 2px 8px #00000008;
+}
+
+.metric-label,
+.small{
+  font-size:12px;
+  color:var(--muted);
+}
+
+.metric{
+  font-size:22px;
+  font-weight:850;
+  margin-top:5px;
+}
+
+.ok{color:var(--ok)}
+.warn{color:var(--warn)}
+.danger{color:var(--danger)}
+
+.section{
+  margin-top:15px;
+}
+
+.section-title{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:8px;
+  margin-bottom:9px;
+}
+
+.section-title h2{
+  font-size:16px;
+  margin:0;
+}
+
+.primary{
+  width:100%;
+  background:var(--accent);
+  color:#fff;
+  border-radius:12px;
+  padding:13px 15px;
+  font-weight:800;
+}
+
+.secondary{
+  background:#eef2f7;
+  color:var(--text);
+  border-radius:10px;
+  padding:10px 12px;
+  font-weight:700;
+}
+
+.danger-btn{
+  background:#fee2e2;
+  color:#991b1b;
+}
+
+.check-btn{
+  width:25px;
+  height:25px;
+  border:2px solid #9ca3af;
+  border-radius:8px;
+  background:#fff;
+  flex:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.check-btn.done{
+  background:var(--ok);
+  border-color:var(--ok);
+  color:#fff;
+}
+
+.delete-btn{
+  width:34px;
+  height:34px;
+  border-radius:9px;
+  background:#fee2e2;
+  color:#991b1b;
+  font-size:16px;
+  flex:none;
+}
+
+input,
+select{
+  width:100%;
+  padding:11px;
+  border:1px solid #d1d5db;
+  border-radius:10px;
+  background:#fff;
+  color:var(--text);
+  outline:none;
+}
+
+input:focus,
+select:focus{
+  border-color:var(--accent);
+}
+
+.progress{
+  height:10px;
+  background:#e5e7eb;
+  border-radius:99px;
+  overflow:hidden;
+  margin-top:10px;
+}
+
+.bar{
+  height:100%;
+  background:var(--ok);
+  transition:.2s;
+}
+
+.bar.warn{background:var(--warn)}
+.bar.danger{background:var(--danger)}
+
+.product{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:11px 0;
+  border-bottom:1px solid var(--line);
+}
+
+.product:last-child{
+  border-bottom:0;
+}
+
+.info{
+  flex:1;
+  min-width:0;
+}
+
+.name{
+  font-weight:750;
+}
+
+.meta{
+  font-size:12px;
+  color:var(--muted);
+  margin-top:3px;
+}
+
+.price{
+  font-weight:800;
+  white-space:nowrap;
+}
+
+.strike{
+  text-decoration:line-through;
+  color:#9ca3af;
+}
+
+.cat{
+  margin-top:13px;
+}
+
+.cat-title{
+  font-size:11px;
+  font-weight:850;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:#6b7280;
+  margin:0 3px 6px;
+}
+
+.badge{
+  font-size:11px;
+  padding:4px 7px;
+  border-radius:99px;
+  background:#eef2f7;
+  color:#4b5563;
+  white-space:nowrap;
+}
+
+.badge-real{
+  background:#dcfce7;
+  color:#166534;
+}
+
+.badge-pending{
+  background:#fef3c7;
+  color:#92400e;
+}
+
+.form2{
+  display:grid;
+  grid-template-columns:1fr 120px;
+  gap:8px;
+}
+
+.form3{
+  display:grid;
+  grid-template-columns:1fr 90px 105px;
+  gap:8px;
+}
+
+.tabs{
+  position:fixed;
+  bottom:0;
+  left:0;
+  right:0;
+  background:#fff;
+  border-top:1px solid var(--line);
+  z-index:10;
+}
+
+.tabs-in{
+  max-width:760px;
+  margin:auto;
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+}
+
+.tab{
+  background:#fff;
+  color:#6b7280;
+  padding:9px 4px;
+  font-size:11px;
+}
+
+.tab.active{
+  color:var(--accent);
+  font-weight:850;
+}
+
+.ico{
+  display:block;
+  font-size:18px;
+  margin-bottom:2px;
+}
+
+.hidden{
+  display:none!important;
+}
+
+.empty{
+  text-align:center;
+  color:var(--muted);
+  padding:25px 8px;
+}
+
+.searchbar{
+  display:flex;
+  gap:8px;
+}
+
+.searchbar button{
+  flex:none;
+}
+
+.switch{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:12px 0;
+  border-bottom:1px solid var(--line);
+}
+
+.switch:last-child{
+  border-bottom:0;
+}
+
+.switch input{
+  width:auto;
+  transform:scale(1.2);
+}
+
+.modal{
+  position:fixed;
+  inset:0;
+  background:#0008;
+  display:grid;
+  place-items:end center;
+  z-index:30;
+}
+
+.modalbox{
+  width:min(760px,100%);
+  background:var(--card);
+  border-radius:20px 20px 0 0;
+  padding:18px;
+  max-height:92vh;
+  overflow:auto;
+}
+
+.modalhead{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:14px;
+}
+
+.close{
+  width:34px;
+  height:34px;
+  border-radius:50%;
+  background:#eef2f7;
+  font-size:20px;
+}
+
+.compare{
+  margin-top:14px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  overflow:hidden;
+}
+
+.compare-row{
+  display:flex;
+  justify-content:space-between;
+  padding:12px;
+  border-bottom:1px solid var(--line);
+}
+
+.compare-row:last-child{
+  border-bottom:0;
+}
+
+.compare-current{
+  font-size:20px;
+  font-weight:850;
+}
+
+.compare-up{
+  background:#fee2e2;
+  color:#991b1b;
+  padding:12px;
+  border-radius:12px;
+  margin-top:12px;
+}
+
+.compare-down{
+  background:#dcfce7;
+  color:#166534;
+  padding:12px;
+  border-radius:12px;
+  margin-top:12px;
+}
+
+.compare-equal{
+  background:#eef2f7;
+  color:#374151;
+  padding:12px;
+  border-radius:12px;
+  margin-top:12px;
+}
+
+.modal-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:14px;
+}
+
+.modal-actions button{
+  padding:13px;
+  border-radius:12px;
+  font-weight:800;
+}
+
+.confirm-btn{
+  background:var(--ok);
+  color:#fff;
+}
+
+.cancel-btn{
+  background:#eef2f7;
+  color:var(--text);
+}
+
+.toast{
+  position:fixed;
+  bottom:85px;
+  left:50%;
+  transform:translateX(-50%);
+  background:#111827;
+  color:#fff;
+  padding:10px 14px;
+  border-radius:10px;
+  font-size:13px;
+  z-index:50;
+  opacity:0;
+  pointer-events:none;
+  transition:.2s;
+}
+
+.toast.show{
+  opacity:1;
+}
+
+.stat{
+  display:flex;
+  justify-content:space-between;
+  padding:9px 0;
+  border-bottom:1px solid var(--line);
+}
+
+.stat:last-child{
+  border:0;
+}
+
+.real-box{
+  border:1px solid #bbf7d0;
+  background:#f0fdf4;
+}
+
+.estimated-box{
+  border:1px solid #bfdbfe;
+  background:#eff6ff;
+}
+
+@media(min-width:761px){
+  .modal{
+    place-items:center;
+  }
+
+  .modalbox{
+    border-radius:20px;
+    width:580px;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+<header>
+  <div class="top">
+    <div>
+      <div class="brand">Compra Fácil</div>
+      <div class="sub">V3 · listas, histórico e controle real da compra</div>
+    </div>
+
+    <button class="secondary" onclick="openBudget()">💰 Caixa</button>
+  </div>
+</header>
+
+<main class="container">
+
+<section id="tab-buy">
+
+<!-- DASHBOARD -->
+
+<div class="grid">
+
+  <div class="card">
+    <div class="metric-label">Valor em caixa</div>
+    <div id="mBudget" class="metric">R$ 0,00</div>
+  </div>
+
+  <div class="card estimated-box">
+    <div class="metric-label">Valor estimado</div>
+    <div id="mEstimated" class="metric">R$ 0,00</div>
+    <div class="small">Baseado no histórico</div>
+  </div>
+
+  <div class="card real-box">
+    <div class="metric-label">Valor real</div>
+    <div id="mReal" class="metric">R$ 0,00</div>
+    <div class="small">Itens já confirmados</div>
+  </div>
+
+  <div class="card">
+    <div class="metric-label">Saldo real</div>
+    <div id="mBalance" class="metric ok">R$ 0,00</div>
+  </div>
+
+</div>
+
+<div class="grid section">
+
+  <div class="card">
+    <div class="metric-label">Saldo estimado</div>
+    <div id="mEstimatedBalance" class="metric ok">R$ 0,00</div>
+  </div>
+
+  <div class="card">
+    <div class="metric-label">Itens</div>
+    <div id="mItems" class="metric">0 / 0</div>
+  </div>
+
+</div>
+
+<div class="card section">
+
+  <div class="section-title">
+    <h2>Orçamento</h2>
+    <span id="pct">0%</span>
+  </div>
+
+  <div class="progress">
+    <div id="bar" class="bar"></div>
+  </div>
+
+  <div id="budgetMsg" class="small" style="margin-top:8px">
+    Defina o valor em caixa.
+  </div>
+
+</div>
+
+<div class="section">
+  <button class="primary" onclick="openAdd()">
+    + Adicionar produto
+  </button>
+</div>
+
+<div class="section">
+
+  <div class="section-title">
+    <h2>Lista atual</h2>
+
+    <div style="display:flex;gap:8px">
+      <button class="secondary" onclick="generateUsual()">
+        Lista habitual
+      </button>
+
+      <button class="secondary" onclick="finishPurchase()">
+        Finalizar
+      </button>
+    </div>
+
+  </div>
+
+  <div id="buyList"></div>
+
+</div>
+
+</section>
+
+
+<!-- PRODUTOS -->
+
+<section id="tab-products" class="hidden">
+
+<div class="section-title">
+  <h2>Produtos</h2>
+  <button class="secondary" onclick="openAdd()">+ Produto</button>
+</div>
+
+<div class="card">
+
+  <div class="searchbar">
+    <input
+      id="productSearch"
+      placeholder="Pesquisar produto..."
+      oninput="renderProducts()"
+    >
+
+    <select id="catFilter" onchange="renderProducts()">
+      <option value="">Todas</option>
+    </select>
+  </div>
+
+  <div id="productsList" style="margin-top:8px"></div>
+
+</div>
+
+</section>
+
+
+<!-- HISTÓRICO -->
+
+<section id="tab-history" class="hidden">
+
+<div class="section-title">
+  <h2>Histórico</h2>
+
+  <button class="secondary" onclick="clearHistory()">
+    Limpar
+  </button>
+</div>
+
+<div id="historyList"></div>
+
+</section>
+
+
+<!-- ANÁLISE -->
+
+<section id="tab-analysis" class="hidden">
+
+<div class="section-title">
+  <h2>Análises</h2>
+</div>
+
+<div id="analysis"></div>
+
+</section>
+
+
+<!-- CONFIGURAÇÕES -->
+
+<section id="tab-settings" class="hidden">
+
+<div class="section-title">
+  <h2>Configurações</h2>
+</div>
+
+<div class="card">
+
+  <div class="switch">
+    <span>Tema escuro</span>
+    <input
+      type="checkbox"
+      id="dark"
+      onchange="setTheme()"
+    >
+  </div>
+
+  <div class="switch">
+    <span>Preencher preço pelo histórico</span>
+    <input
+      type="checkbox"
+      id="autoPrice"
+      onchange="saveSettings()"
+    >
+  </div>
+
+  <div class="switch">
+    <span>Sugerir quantidade da última compra</span>
+    <input
+      type="checkbox"
+      id="autoQty"
+      onchange="saveSettings()"
+    >
+  </div>
+
+  <div class="switch">
+    <span>Ocultar produtos já comprados</span>
+    <input
+      type="checkbox"
+      id="hideDone"
+      onchange="saveSettings()"
+    >
+  </div>
+
+  <div class="switch">
+    <span>Alertas de orçamento</span>
+    <input
+      type="checkbox"
+      id="alerts"
+      onchange="saveSettings()"
+    >
+  </div>
+
+</div>
+
+<div class="card section">
+
+  <h3 style="margin-top:0">
+    Ordem do supermercado
+  </h3>
+
+  <div class="small">
+    Use os botões para priorizar setores.
+  </div>
+
+  <div id="sectorOrder"></div>
+
+</div>
+
+<div class="card section">
+
+  <h3 style="margin-top:0">
+    Dados
+  </h3>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+
+    <button
+      class="secondary"
+      onclick="exportData()"
+    >
+      Exportar backup
+    </button>
+
+    <button
+      class="secondary"
+      onclick="document.getElementById('file').click()"
+    >
+      Importar
+    </button>
+
+    <button
+      class="secondary danger-btn"
+      onclick="resetApp()"
+    >
+      Restaurar V3
+    </button>
+
+  </div>
+
+  <input
+    id="file"
+    type="file"
+    accept=".json"
+    hidden
+    onchange="importData(event)"
+  >
+
+</div>
+
+</section>
+
+</main>
+
+
+<!-- NAVEGAÇÃO -->
+
+<nav class="tabs">
+
+<div class="tabs-in">
+
+<button
+  class="tab active"
+  onclick="tab('buy',this)"
+>
+  🛒
+  <span class="ico"></span>
+  Compra
+</button>
+
+<button
+  class="tab"
+  onclick="tab('products',this)"
+>
+  📦
+  <span class="ico"></span>
+  Produtos
+</button>
+
+<button
+  class="tab"
+  onclick="tab('history',this)"
+>
+  📊
+  <span class="ico"></span>
+  Histórico
+</button>
+
+<button
+  class="tab"
+  onclick="tab('analysis',this)"
+>
+  📈
+  <span class="ico"></span>
+  Análise
+</button>
+
+<button
+  class="tab"
+  onclick="tab('settings',this)"
+>
+  ⚙️
+  <span class="ico"></span>
+  Config.
+</button>
+
+</div>
+
+</nav>
+
+</div>
+
+
+<!-- MODAL ADICIONAR -->
+
+<div id="modal" class="modal hidden">
+
+<div class="modalbox">
+
+  <div class="modalhead">
+
+    <h3 id="modalTitle">
+      Adicionar produto
+    </h3>
+
+    <button
+      class="close"
+      onclick="closeModal()"
+    >
+      ×
+    </button>
+
+  </div>
+
+  <div class="form2">
+
+    <input
+      id="pname"
+      placeholder="Nome do produto"
+      list="suggestions"
+    >
+
+    <select id="pcat"></select>
+
+  </div>
+
+  <datalist id="suggestions"></datalist>
+
+  <div
+    class="form3"
+    style="margin-top:8px"
+  >
+
+    <input
+      id="pqty"
+      type="number"
+      min=".01"
+      step=".01"
+      value="1"
+    >
+
+    <select id="punit">
+      <option>un.</option>
+      <option>kg</option>
+      <option>g</option>
+      <option>L</option>
+      <option>ml</option>
+    </select>
+
+    <input
+      id="pprice"
+      type="number"
+      min="0"
+      step=".01"
+      placeholder="Preço atual"
+    >
+
+  </div>
+
+  <div
+    id="priceHint"
+    class="small"
+    style="margin-top:8px"
+  ></div>
+
+  <button
+    class="primary"
+    style="margin-top:12px"
+    onclick="saveProduct()"
+  >
+    Adicionar à lista
+  </button>
+
+</div>
+
+</div>
+
+
+<!-- MODAL CONFIRMAR COMPRA -->
+
+<div id="confirmModal" class="modal hidden">
+
+<div class="modalbox">
+
+  <div class="modalhead">
+
+    <h3>
+      Confirmar compra
+    </h3>
+
+    <button
+      class="close"
+      onclick="closeConfirmModal()"
+    >
+      ×
+    </button>
+
+  </div>
+
+  <div id="confirmProductName"
+       style="font-size:19px;font-weight:850">
+  </div>
+
+  <div
+    class="small"
+    style="margin-top:4px"
+  >
+    Informe os dados encontrados no supermercado.
+  </div>
+
+  <div
+    class="form3"
+    style="margin-top:14px"
+  >
+
+    <div>
+      <div class="small">Quantidade</div>
+
+      <input
+        id="confirmQty"
+        type="number"
+        min=".01"
+        step=".01"
+        oninput="updateComparison()"
+      >
+    </div>
+
+    <div>
+      <div class="small">Unidade</div>
+
+      <input
+        id="confirmUnit"
+        disabled
+      >
+    </div>
+
+    <div>
+      <div class="small">Preço unitário</div>
+
+      <input
+        id="confirmPrice"
+        type="number"
+        min="0"
+        step=".01"
+        oninput="updateComparison()"
+      >
+    </div>
+
+  </div>
+
+  <div
+    id="comparisonBox"
+    class="compare"
+  ></div>
+
+  <div
+    id="comparisonMessage"
+  ></div>
+
+  <div class="modal-actions">
+
+    <button
+      class="cancel-btn"
+      onclick="closeConfirmModal()"
+    >
+      Cancelar
+    </button>
+
+    <button
+      class="confirm-btn"
+      onclick="confirmPurchaseItem()"
+    >
+      Confirmar compra
+    </button>
+
+  </div>
+
+</div>
+
+</div>
+
+
+<div id="toast" class="toast"></div>
+
+
 <script>
-const KEY='compra_facil_v6_demo';let state=JSON.parse(localStorage.getItem(KEY)||'null')||{budget:0,products:[],catalog:{Arroz:16.9,Feijão:6.98,Macarrão:6.98,Frango:17.99,Leite:4.99}};let current=-1;
-const money=v=>(Number(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});function save(){localStorage.setItem(KEY,JSON.stringify(state))}
-function estimatedTotal(){return state.products.reduce((s,p)=>s+p.qty*(p.estimated||0),0)}function realTotal(){return state.products.reduce((s,p)=>s+(p.done?p.qty*p.realPrice:0),0)}
-function render(){budget.textContent=money(state.budget);estimated.textContent=money(estimatedTotal());real.textContent=money(realTotal());count.textContent=state.products.filter(p=>p.done).length+' / '+state.products.length;list.innerHTML=state.products.length?state.products.map((p,i)=>`<div class="product"><button class="check ${p.done?'done':''}" onclick="start(${i})">${p.done?'✓':''}</button><div class="info"><div class="name ${p.done?'strike':''}">${p.name}</div><div class="small">${p.qty} un. · ${p.done?money(p.realPrice)+' real':'estimado '+money(p.estimated)}</div></div><div class="price">${money(p.done?p.qty*p.realPrice:p.qty*p.estimated)}</div><button class="remove" onclick="removeItem(${i})">🗑</button></div>`).join(''):'<div class="empty">Sua lista está vazia.</div>'}
-function setBudget(){let v=prompt('Valor disponível:',state.budget||'');if(v!==null&&!isNaN(Number(v.replace(',','.')))){state.budget=Number(v.replace(',','.'));save();render()}}
-function addProduct(){let n=prompt('Nome do produto:');if(!n)return;let q=prompt('Quantidade:',1);q=Number(q)||1;let key=Object.keys(state.catalog).find(x=>x.toLowerCase()===n.toLowerCase());state.products.push({name:n,qty:q,estimated:key?state.catalog[key]:0,realPrice:0,done:false});save();render()}
-function start(i){if(state.products[i].done)return;current=i;let p=state.products[i];productName.textContent=p.name;qty.value=p.qty;price.value='';compare();modal.classList.add('show');price.focus()}
-function compare(){let p=state.products[current];if(!p)return;let v=Number(price.value)||0;let last=p.estimated||0;comparison.innerHTML=`Último preço: <strong>${last?money(last):'sem histórico'}</strong><br>Preço atual: <strong>${v?money(v):'—'}</strong>${last&&v?`<br>Variação: <strong>${((v/last-1)*100).toFixed(1)}%</strong>`:''}`}
-function confirmBuy(){let p=state.products[current],q=Number(qty.value),v=Number(price.value);if(!p||q<=0||v<=0){alert('Informe quantidade e preço.');return}let last=p.estimated;if(last&&v>last*1.1&&!confirm(`O preço está ${((v/last-1)*100).toFixed(1)}% acima do último registrado. Continuar?`))return;p.qty=q;p.realPrice=v;p.done=true;state.catalog[p.name]=v;save();closeModal();render()}
-function closeModal(){modal.classList.remove('show');current=-1}function removeItem(i){if(confirm('Remover este item da lista?')){state.products.splice(i,1);save();render()}}function clearList(){if(confirm('Limpar a lista atual?')){state.products=[];save();render()}}function usual(){Object.entries(state.catalog).forEach(([name,last])=>{if(!state.products.some(p=>p.name.toLowerCase()===name.toLowerCase()))state.products.push({name,qty:1,estimated:last,realPrice:0,done:false})});save();render()}
+
+/* ============================================================
+   BASE ORIGINAL
+============================================================ */
+
+const BASE = {
+  catalog: [
+    {"name":"Arroz","cat":"Mercearia","unit":"un.","last":16.9,"avg":16.9,"min":16.9,"max":16.9,"lastQty":1,"historyCount":2},
+    {"name":"Feijão","cat":"Mercearia","unit":"un.","last":6.98,"avg":6.98,"min":6.98,"max":6.98,"lastQty":4,"historyCount":2},
+    {"name":"Feijão Preto","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Feijão Carioca","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Lentilha","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Grão-de-bico","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Macarrão","cat":"Mercearia","unit":"un.","last":6.98,"avg":5.63,"min":4.29,"max":6.98,"lastQty":3,"historyCount":2},
+    {"name":"Massa de Lasanha","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Farinha de Trigo","cat":"Mercearia","unit":"un.","last":3.39,"avg":3.39,"min":3.39,"max":3.39,"lastQty":1,"historyCount":1},
+    {"name":"Farinha de Mandioca","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Farofa","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Fubá","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Milho para Pipoca","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Amido de Milho","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Aveia","cat":"Mercearia","unit":"un.","last":3.79,"avg":3.79,"min":3.79,"max":3.79,"lastQty":1,"historyCount":1},
+    {"name":"Açúcar","cat":"Mercearia","unit":"un.","last":12.79,"avg":12.79,"min":12.79,"max":12.79,"lastQty":1,"historyCount":1},
+    {"name":"Adoçante","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Sal","cat":"Mercearia","unit":"un.","last":2.29,"avg":2.29,"min":2.29,"max":2.29,"lastQty":1,"historyCount":1},
+    {"name":"Óleo de Soja","cat":"Mercearia","unit":"un.","last":6.79,"avg":6.89,"min":6.79,"max":6.99,"lastQty":3,"historyCount":2},
+    {"name":"Azeite","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Vinagre","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Molho de Tomate","cat":"Mercearia","unit":"un.","last":2.89,"avg":2.89,"min":2.89,"max":2.89,"lastQty":1,"historyCount":1},
+    {"name":"Extrato de Tomate","cat":"Mercearia","unit":"un.","last":3.19,"avg":3.19,"min":3.19,"max":3.19,"lastQty":2,"historyCount":1},
+    {"name":"Maionese","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Ketchup","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Mostarda","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Molho de Pimenta","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Temperos","cat":"Mercearia","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Café","cat":"Mercearia","unit":"un.","last":25.9,"avg":25.9,"min":25.9,"max":25.9,"lastQty":1,"historyCount":1},
+    {"name":"Achocolatado","cat":"Padaria & Lanches","unit":"un.","last":10.49,"avg":10.49,"min":10.49,"max":10.49,"lastQty":1,"historyCount":2},
+    {"name":"Leite UHT","cat":"Laticínios","unit":"un.","last":4.99,"avg":4.99,"min":4.98,"max":4.99,"lastQty":9,"historyCount":3},
+    {"name":"Biscoito","cat":"Padaria & Lanches","unit":"un.","last":2.8,"avg":2.92,"min":2.48,"max":3.49,"lastQty":6,"historyCount":3},
+    {"name":"Bolacha","cat":"Padaria & Lanches","unit":"un.","last":4.89,"avg":3.69,"min":2.5,"max":4.89,"lastQty":1,"historyCount":2},
+    {"name":"Pão de Forma","cat":"Padaria & Lanches","unit":"un.","last":4.98,"avg":4.98,"min":4.98,"max":4.99,"lastQty":3,"historyCount":3},
+    {"name":"Manteiga","cat":"Laticínios","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Margarina","cat":"Laticínios","unit":"un.","last":6.58,"avg":6.58,"min":6.58,"max":6.58,"lastQty":1,"historyCount":1},
+    {"name":"Requeijão","cat":"Laticínios","unit":"un.","last":6.99,"avg":6.99,"min":6.99,"max":6.99,"lastQty":1,"historyCount":2},
+    {"name":"Queijo","cat":"Laticínios","unit":"un.","last":7.99,"avg":7.49,"min":6.98,"max":7.99,"lastQty":1,"historyCount":2},
+    {"name":"Presunto","cat":"Laticínios","unit":"un.","last":9.99,"avg":9.99,"min":9.99,"max":9.99,"lastQty":1,"historyCount":2},
+    {"name":"Iogurte","cat":"Laticínios","unit":"un.","last":6.85,"avg":6.64,"min":5.74,"max":7.33,"lastQty":3,"historyCount":3},
+    {"name":"Creme de Leite","cat":"Laticínios","unit":"un.","last":2.59,"avg":2.59,"min":2.59,"max":2.59,"lastQty":2,"historyCount":1},
+    {"name":"Leite Condensado","cat":"Laticínios","unit":"un.","last":5.99,"avg":5.99,"min":5.99,"max":5.99,"lastQty":1,"historyCount":1},
+    {"name":"Ovos","cat":"Mercearia","unit":"un.","last":15.98,"avg":15.98,"min":15.98,"max":15.98,"lastQty":1,"historyCount":1},
+    {"name":"Frango","cat":"Carnes","unit":"kg","last":17.99,"avg":20.84,"min":8.54,"max":36,"lastQty":3,"historyCount":3},
+    {"name":"Carne Bovina","cat":"Carnes","unit":"kg","last":44.81,"avg":50.66,"min":44.81,"max":56.5,"lastQty":1,"historyCount":2},
+    {"name":"Carne Suína","cat":"Carnes","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Carne Moída","cat":"Carnes","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":1},
+    {"name":"Linguiça","cat":"Carnes","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Salsicha","cat":"Carnes","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Hambúrguer","cat":"Carnes","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Peixe","cat":"Carnes","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Atum","cat":"Carnes","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Sardinha","cat":"Carnes","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Legumes","cat":"Hortifruti","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Verduras","cat":"Hortifruti","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Frutas/Verduras","cat":"Hortifruti","unit":"kg","last":5.67,"avg":5.71,"min":5.67,"max":5.74,"lastQty":6,"historyCount":2},
+    {"name":"Batata","cat":"Hortifruti","unit":"kg","last":9.3,"avg":9.3,"min":9.3,"max":9.3,"lastQty":2,"historyCount":1},
+    {"name":"Cebola","cat":"Hortifruti","unit":"kg","last":1.62,"avg":1.62,"min":1.62,"max":1.62,"lastQty":1,"historyCount":1},
+    {"name":"Alho","cat":"Hortifruti","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Tomate","cat":"Hortifruti","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Cenoura","cat":"Hortifruti","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Banana","cat":"Hortifruti","unit":"kg","last":11.22,"avg":11.22,"min":11.22,"max":11.22,"lastQty":2,"historyCount":1},
+    {"name":"Maçã","cat":"Hortifruti","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Laranja","cat":"Hortifruti","unit":"kg","last":7.08,"avg":7.08,"min":7.08,"max":7.08,"lastQty":1,"historyCount":1},
+    {"name":"Limão","cat":"Hortifruti","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Uva","cat":"Hortifruti","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Abacaxi","cat":"Hortifruti","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Mamão","cat":"Hortifruti","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Água","cat":"Bebidas","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Água com Gás","cat":"Bebidas","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Água de Coco","cat":"Bebidas","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Suco","cat":"Bebidas","unit":"un.","last":1.62,"avg":1.77,"min":1.62,"max":1.92,"lastQty":6,"historyCount":2},
+    {"name":"Refrigerante","cat":"Bebidas","unit":"un.","last":6.98,"avg":7.09,"min":6.98,"max":7.29,"lastQty":2,"historyCount":3},
+    {"name":"Energético","cat":"Bebidas","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Cerveja","cat":"Bebidas","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Papel Higiênico","cat":"Limpeza","unit":"un.","last":16.49,"avg":10.65,"min":7.48,"max":16.49,"lastQty":2,"historyCount":3},
+    {"name":"Papel Toalha","cat":"Limpeza","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Guardanapo","cat":"Limpeza","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Detergente","cat":"Limpeza","unit":"un.","last":2.39,"avg":2.44,"min":2.39,"max":2.49,"lastQty":2,"historyCount":2},
+    {"name":"Sabão em Pó","cat":"Limpeza","unit":"un.","last":15.99,"avg":15.99,"min":15.99,"max":15.99,"lastQty":1,"historyCount":1},
+    {"name":"Amaciante","cat":"Limpeza","unit":"un.","last":6.98,"avg":7.24,"min":6.98,"max":7.49,"lastQty":1,"historyCount":2},
+    {"name":"Desinfetante","cat":"Limpeza","unit":"un.","last":11.9,"avg":8.54,"min":5.19,"max":11.9,"lastQty":1,"historyCount":2},
+    {"name":"Sabonete","cat":"Higiene","unit":"un.","last":1.59,"avg":4.52,"min":1.59,"max":9.98,"lastQty":3,"historyCount":3},
+    {"name":"Shampoo","cat":"Higiene","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Condicionador","cat":"Higiene","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Creme Dental","cat":"Higiene","unit":"un.","last":4.99,"avg":4.99,"min":4.99,"max":4.99,"lastQty":1,"historyCount":1},
+    {"name":"Desodorante","cat":"Higiene","unit":"un.","last":3.98,"avg":3.98,"min":3.98,"max":3.98,"lastQty":1,"historyCount":1},
+    {"name":"Absorvente","cat":"Higiene","unit":"un.","last":4.49,"avg":4.49,"min":4.49,"max":4.49,"lastQty":1,"historyCount":1},
+    {"name":"Ração para Cães","cat":"Pet","unit":"un.","last":59.9,"avg":59.9,"min":59.9,"max":59.9,"lastQty":1,"historyCount":1},
+    {"name":"Ração para Gatos","cat":"Pet","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Areia para Gatos","cat":"Pet","unit":"un.","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Coxão mole","cat":"Carnes","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Coxão duro","cat":"Carnes","unit":"kg","last":0,"avg":0,"min":0,"max":0,"lastQty":1,"historyCount":0},
+    {"name":"Caderno","cat":"Papelaria","unit":"un.","last":13.98,"avg":13.98,"min":13.98,"max":13.98,"lastQty":2,"historyCount":1},
+    {"name":"Pizza","cat":"Congelados","unit":"un.","last":14.98,"avg":14.98,"min":14.98,"max":14.98,"lastQty":2,"historyCount":1},
+    {"name":"Batata Palha","cat":"Mercearia","unit":"un.","last":3.99,"avg":3.99,"min":3.99,"max":3.99,"lastQty":1,"historyCount":1},
+    {"name":"Chocomil","cat":"Padaria & Lanches","unit":"un.","last":1.18,"avg":1.14,"min":1.09,"max":1.18,"lastQty":6,"historyCount":2},
+    {"name":"Milho","cat":"Mercearia","unit":"un.","last":2.69,"avg":2.69,"min":2.69,"max":2.69,"lastQty":2,"historyCount":1},
+    {"name":"Suco de Caixinha","cat":"Bebidas","unit":"un.","last":1.89,"avg":1.89,"min":1.89,"max":1.89,"lastQty":4,"historyCount":1},
+    {"name":"Chocolate","cat":"Padaria & Lanches","unit":"un.","last":5.23,"avg":5.23,"min":5.23,"max":5.23,"lastQty":2,"historyCount":1},
+    {"name":"Monster","cat":"Bebidas","unit":"un.","last":8.98,"avg":8.98,"min":8.98,"max":8.98,"lastQty":1,"historyCount":1}
+  ],
+
+  history: [
+    ["Arroz",16.9,1],
+    ["Feijão",6.98,1],
+    ["Macarrão",4.29,1],
+    ["Molho de Tomate",2.89,1],
+    ["Leite UHT",4.98,5],
+    ["Iogurte",7.33,3],
+    ["Pão de Forma",4.98,2],
+    ["Detergente",2.49,2],
+    ["Sabão em Pó",15.99,1],
+    ["Amaciante",7.49,1],
+    ["Papel Higiênico",7.48,1],
+    ["Sabonete",9.98,1],
+    ["Biscoito",2.48,3],
+    ["Frutas/Verduras",5.74,10],
+    ["Frango",36,1],
+    ["Carne Bovina",56.5,2],
+    ["Queijo",6.98,2],
+    ["Presunto",0,1],
+    ["Requeijão",6.99,1],
+    ["Desinfetante",5.19,1],
+    ["Absorvente",4.49,1],
+    ["Caderno",13.98,2],
+    ["Pizza",14.98,2],
+    ["Achocolatado",10.49,1],
+    ["Refrigerante",7.29,1],
+    ["Bolacha",2.5,4],
+    ["Óleo de Soja",6.99,1],
+    ["Suco",1.92,3],
+    ["Refrigerante",6.99,1],
+    ["Leite UHT",4.99,5],
+    ["Pão de Forma",4.99,1],
+    ["Iogurte",5.74,4],
+    ["Frutas/Verduras",5.67,6],
+    ["Frango",8.54,.5],
+    ["Carne Bovina",44.81,1],
+    ["Queijo",7.99,1],
+    ["Biscoito",3.49,3],
+    ["Papel Higiênico",7.98,1],
+    ["Sabonete",1.99,1],
+    ["Chocomil",1.09,4],
+    ["Requeijão",6.99,1],
+    ["Milho",2.69,2],
+    ["Creme de leite",2.59,2],
+    ["Leite Condensado",5.99,1],
+    ["Batata Palha",3.99,1],
+    ["Desinfetante",11.9,1],
+    ["Presunto",9.99,1],
+    ["Arroz",16.9,1],
+    ["Açúcar",12.79,1],
+    ["Feijão",6.98,4],
+    ["Óleo de Soja",6.79,3],
+    ["Café",25.9,1],
+    ["Sal",2.29,1],
+    ["Farinha de Trigo",3.39,1],
+    ["Margarina",6.58,1],
+    ["Pão de Forma",4.98,3],
+    ["Bolacha",4.89,1],
+    ["Leite UHT",4.99,9],
+    ["Ovos",15.98,1],
+    ["Creme Dental",4.99,1],
+    ["Sabonete",1.59,3],
+    ["Detergente",2.39,2],
+    ["Papel Higiênico",16.49,2],
+    ["Frango",17.99,3],
+    ["Carne Moída",0,1],
+    ["Extrato de Tomate",3.19,2],
+    ["Macarrão",6.98,3],
+    ["Banana",11.22,2],
+    ["Laranja",7.08,1],
+    ["Batata",9.3,2],
+    ["Cebola",1.62,1],
+    ["Suco",1.62,6],
+    ["Refrigerante",6.98,2],
+    ["Ração para Cães",59.9,1],
+    ["Achocolatado",10.49,1],
+    ["Chocomil",1.18,6],
+    ["Aveia",3.79,1],
+    ["Biscoito",2.8,6],
+    ["Iogurte",6.85,3],
+    ["Amaciante",6.98,1],
+    ["Desodorante",3.98,1],
+    ["Suco de caixinha",1.89,4],
+    ["Chocolate",5.23,2],
+    ["Monster",8.98,1]
+  ]
+};
+
+
+/* ============================================================
+   CONFIGURAÇÃO
+============================================================ */
+
+const KEY = 'compra_facil_v2';
+
+const CATS = [
+  'Hortifruti',
+  'Padaria & Lanches',
+  'Carnes',
+  'Laticínios',
+  'Mercearia',
+  'Bebidas',
+  'Limpeza',
+  'Higiene',
+  'Pet',
+  'Papelaria',
+  'Congelados',
+  'Outros'
+];
+
+let saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+
+let state = saved || {
+  budget:0,
+  products:[],
+  history:[],
+  catalog:BASE.catalog,
+  settings:{
+    dark:false,
+    autoPrice:true,
+    autoQty:true,
+    hideDone:false,
+    alerts:true
+  },
+  order:CATS.slice()
+};
+
+
+/* ============================================================
+   MIGRAÇÃO DA VERSÃO ANTERIOR
+============================================================ */
+
+if(!state.settings){
+
+  state.settings={
+    dark:false,
+    autoPrice:true,
+    autoQty:true,
+    hideDone:false,
+    alerts:true
+  };
+
+}
+
+if(!state.order){
+  state.order=CATS.slice();
+}
+
+if(!state.products){
+  state.products=[];
+}
+
+if(!state.history){
+  state.history=[];
+}
+
+
+/*
+  Compatibilidade com listas antigas:
+
+  Se existirem produtos antigos com preço preenchido
+  mas ainda não comprados, o sistema mantém o preço como
+  referência somente se necessário, porém zera o preço real.
+
+  O campo estimatedPrice passa a guardar a referência.
+*/
+
+state.products.forEach(p=>{
+
+  if(p.estimatedPrice===undefined){
+
+    p.estimatedPrice =
+      p.last ||
+      getCatalogProduct(p.name)?.last ||
+      getCatalogProduct(p.name)?.avg ||
+      0;
+
+  }
+
+  if(p.done===true){
+
+    if(p.realPrice===undefined){
+      p.realPrice = Number(p.price)||0;
+    }
+
+  }else{
+
+    p.realPrice = 0;
+    p.price = 0;
+
+  }
+
+});
+
+
+/* ============================================================
+   FUNÇÕES BÁSICAS
+============================================================ */
+
+function save(){
+  localStorage.setItem(KEY,JSON.stringify(state));
+}
+
+function money(v){
+
+  return (Number(v)||0).toLocaleString(
+    'pt-BR',
+    {
+      style:'currency',
+      currency:'BRL'
+    }
+  );
+
+}
+
+function norm(s){
+
+  return (s||'')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase()
+    .trim();
+
+}
+
+function getCatalogProduct(name){
+
+  return state.catalog.find(
+    x=>norm(x.name)===norm(name)
+  );
+
+}
+
+function findCat(name){
+
+  const p=getCatalogProduct(name);
+
+  return p?p.cat:'Mercearia';
+
+}
+
+
+/* ============================================================
+   VALORES
+============================================================ */
+
+/*
+  ESTIMADO:
+  Usa o último preço conhecido.
+  Se não houver último preço, usa a média.
+*/
+
+function estimatedPrice(p){
+
+  if(Number(p.estimatedPrice)>0){
+    return Number(p.estimatedPrice);
+  }
+
+  const catalog=getCatalogProduct(p.name);
+
+  if(!catalog){
+    return 0;
+  }
+
+  return Number(
+    catalog.last ||
+    catalog.avg ||
+    0
+  );
+
+}
+
+
+/*
+  VALOR ESTIMADO TOTAL DA LISTA
+*/
+
+function estimatedTotal(){
+
+  return state.products.reduce(
+    (sum,p)=>{
+      return sum +
+        (Number(p.qty)||0) *
+        estimatedPrice(p);
+    },
+    0
+  );
+
+}
+
+
+/*
+  VALOR REAL:
+  SOMENTE produtos confirmados.
+*/
+
+function realTotal(){
+
+  return state.products.reduce(
+    (sum,p)=>{
+
+      if(!p.done){
+        return sum;
+      }
+
+      return sum +
+        (Number(p.qty)||0) *
+        (Number(p.realPrice)||0);
+
+    },
+    0
+  );
+
+}
+
+
+/* ============================================================
+   DASHBOARD
+============================================================ */
+
+function render(){
+
+  const estimated=estimatedTotal();
+  const real=realTotal();
+
+  const budget=Number(state.budget)||0;
+
+  const estimatedBalance=budget-estimated;
+  const realBalance=budget-real;
+
+  const pct=budget
+    ? Math.round(estimated/budget*100)
+    : 0;
+
+  mBudget.textContent=money(budget);
+
+  mEstimated.textContent=money(estimated);
+
+  mReal.textContent=money(real);
+
+  mEstimatedBalance.textContent=
+    money(estimatedBalance);
+
+  mBalance.textContent=
+    money(realBalance);
+
+  mBalance.className=
+    'metric '+
+    (
+      realBalance<0
+        ?'danger'
+        :budget && realBalance<=budget*.15
+          ?'warn'
+          :'ok'
+    );
+
+  mEstimatedBalance.className=
+    'metric '+
+    (
+      estimatedBalance<0
+        ?'danger'
+        :budget && estimatedBalance<=budget*.15
+          ?'warn'
+          :'ok'
+    );
+
+  mItems.textContent=
+    state.products.filter(p=>p.done).length+
+    ' / '+
+    state.products.length;
+
+  pct.textContent=pct+'%';
+
+  bar.style.width=Math.min(pct,100)+'%';
+
+  bar.className=
+    'bar '+
+    (
+      pct>100
+        ?'danger'
+        :pct>=85
+          ?'warn'
+          :''
+    );
+
+  if(!budget){
+
+    budgetMsg.textContent=
+      'Defina o valor em caixa.';
+
+  }else{
+
+    budgetMsg.innerHTML=
+      'Estimado: <strong>'+
+      money(estimatedBalance)+
+      '</strong> · Real: <strong>'+
+      money(realBalance)+
+      '</strong>';
+
+  }
+
+  renderBuy();
+  renderProducts();
+  renderHistory();
+  renderAnalysis();
+  renderSettings();
+
+}
+
+
+/* ============================================================
+   LISTA ATUAL
+============================================================ */
+
+function renderBuy(){
+
+  let arr=state.products.map(
+    (p,i)=>({...p,i})
+  );
+
+  if(state.settings.hideDone){
+
+    arr=arr.filter(p=>!p.done);
+
+  }
+
+  if(!arr.length){
+
+    buyList.innerHTML=
+      '<div class="card empty">'+
+      (
+        state.products.length
+        ?
+        'Todos os itens foram comprados.'
+        :
+        'Sua lista está vazia. Adicione produtos ou gere sua lista habitual.'
+      )+
+      '</div>';
+
+    return;
+
+  }
+
+  let groups={};
+
+  arr.forEach(p=>{
+
+    if(!groups[p.cat]){
+      groups[p.cat]=[];
+    }
+
+    groups[p.cat].push(p);
+
+  });
+
+
+  buyList.innerHTML=
+    Object.entries(groups)
+      .sort(
+        (a,b)=>
+          state.order.indexOf(a[0])-
+          state.order.indexOf(b[0])
+      )
+      .map(([cat,ps])=>{
+
+        return `
+        <div class="cat">
+
+          <div class="cat-title">
+            ${cat}
+          </div>
+
+          <div class="card">
+
+            ${ps.map(p=>{
+
+              const estimated=
+                estimatedPrice(p);
+
+              const real=
+                Number(p.realPrice)||0;
+
+              const totalReal=
+                p.done
+                ?Number(p.qty)*real
+                :0;
+
+              return `
+
+              <div class="product">
+
+                <button
+                  class="check-btn ${p.done?'done':''}"
+                  onclick="startItemPurchase(${p.i})"
+                  title="${p.done?'Compra confirmada':'Registrar compra'}"
+                >
+                  ${p.done?'✓':''}
+                </button>
+
+                <div class="info">
+
+                  <div class="name ${p.done?'strike':''}">
+                    ${escapeHtml(p.name)}
+                  </div>
+
+                  <div class="meta">
+
+                    ${p.qty} ${p.unit}
+
+                    ${
+                      p.done
+                      ?
+                      ` · <strong>${money(real)}</strong> / ${p.unit}`
+                      :
+                      ` · estimado ${money(estimated)} / ${p.unit}`
+                    }
+
+                  </div>
+
+                  <div style="margin-top:5px">
+
+                    ${
+                      p.done
+                      ?
+                      '<span class="badge badge-real">COMPRADO · VALOR REAL</span>'
+                      :
+                      '<span class="badge badge-pending">PENDENTE</span>'
+                    }
+
+                  </div>
+
+                </div>
+
+                <div class="price">
+
+                  ${
+                    p.done
+                    ?
+                    money(totalReal)
+                    :
+                    money(Number(p.qty)*estimated)
+                  }
+
+                </div>
+
+                <button
+                  class="delete-btn"
+                  onclick="removeItem(${p.i})"
+                  title="Remover da lista"
+                >
+                  🗑
+                </button>
+
+              </div>
+
+              `;
+
+            }).join('')}
+
+          </div>
+
+        </div>
+        `;
+
+      }).join('');
+
+}
+
+
+/* ============================================================
+   ADICIONAR PRODUTO
+============================================================ */
+
+function openAdd(prefill=''){
+
+  modal.classList.remove('hidden');
+
+  pname.value=prefill;
+
+  pcat.innerHTML=
+    CATS.map(
+      c=>`<option>${c}</option>`
+    ).join('');
+
+  suggestions.innerHTML=
+    state.catalog.map(
+      p=>`<option value="${escapeHtml(p.name)}">`
+    ).join('');
+
+  pqty.value=1;
+
+  /*
+    IMPORTANTE:
+    Preço fica vazio.
+    O histórico é apenas referência.
+  */
+
+  pprice.value='';
+
+  priceHint.textContent='';
+
+  if(prefill){
+
+    applySuggestion();
+
+  }
+
+  pname.oninput=applySuggestion;
+
+  pname.focus();
+
+}
+
+function applySuggestion(){
+
+  const p=
+    state.catalog.find(
+      x=>norm(x.name)===norm(pname.value)
+    );
+
+  if(!p){
+
+    priceHint.textContent=
+      'Produto novo. O preço será informado no momento da compra.';
+
+    return;
+
+  }
+
+  pcat.value=p.cat;
+
+  punit.value=p.unit;
+
+  /*
+    Quantidade pode ser sugerida.
+  */
+
+  if(
+    state.settings.autoQty &&
+    p.lastQty
+  ){
+
+    pqty.value=p.lastQty;
+
+  }
+
+  /*
+    NÃO preencher preço.
+  */
+
+  pprice.value='';
+
+  if(p.historyCount){
+
+    priceHint.innerHTML=
+      `Histórico: ${p.historyCount} compra(s) · `+
+      `último <strong>${money(p.last)}</strong> · `+
+      `média ${money(p.avg)} · `+
+      `menor ${money(p.min)} · `+
+      `maior ${money(p.max)}`;
+
+  }else{
+
+    priceHint.textContent=
+      'Produto sem histórico. O preço será informado na compra.';
+
+  }
+
+}
+
+function closeModal(){
+
+  modal.classList.add('hidden');
+
+}
+
+function saveProduct(){
+
+  const name=pname.value.trim();
+
+  if(!name){
+
+    return toast(
+      'Informe o produto.'
+    );
+
+  }
+
+  const cat=pcat.value;
+
+  const qty=
+    Number(pqty.value)||1;
+
+  const unit=punit.value;
+
+  const old=
+    getCatalogProduct(name);
+
+  /*
+    NOVO PRODUTO NA LISTA:
+    preço REAL = 0
+    estimativa = histórico
+  */
+
+  const estimated=
+    old
+      ?
+      Number(
+        old.last ||
+        old.avg ||
+        0
+      )
+      :
+      0;
+
+  state.products.push({
+
+    name,
+    cat,
+    qty,
+    unit,
+
+    /*
+      Campo mantido por compatibilidade.
+    */
+    price:0,
+
+    /*
+      Novo campo real.
+    */
+    realPrice:0,
+
+    /*
+      Referência histórica.
+    */
+    estimatedPrice:estimated,
+
+    done:false,
+
+    last:old?.last||0
+
+  });
+
+
+  /*
+    Se for produto novo, entra no catálogo,
+    mas NÃO registra preço da compra.
+  */
+
+  if(!old){
+
+    state.catalog.push({
+
+      name,
+      cat,
+      unit,
+
+      last:0,
+      avg:0,
+      min:0,
+      max:0,
+
+      lastQty:qty,
+
+      historyCount:0
+
+    });
+
+  }
+
+  save();
+
+  closeModal();
+
+  render();
+
+  toast(
+    'Produto adicionado. Preço será informado na compra.'
+  );
+
+}
+
+function quickAdd(name){
+
+  openAdd(name);
+
+}
+
+
+/* ============================================================
+   CHECKBOX / INÍCIO DA COMPRA
+============================================================ */
+
+let currentPurchaseIndex=null;
+
+function startItemPurchase(index){
+
+  const p=state.products[index];
+
+  if(!p){
+    return;
+  }
+
+  /*
+    Se já foi comprado, não permite alterar acidentalmente.
+  */
+
+  if(p.done){
+
+    return toast(
+      'Este item já foi confirmado.'
+    );
+
+  }
+
+  currentPurchaseIndex=index;
+
+  const catalog=
+    getCatalogProduct(p.name);
+
+  const last=
+    Number(
+      catalog?.last ||
+      p.last ||
+      0
+    );
+
+  confirmProductName.textContent=
+    p.name;
+
+  confirmQty.value=
+    p.qty || catalog?.lastQty || 1;
+
+  confirmUnit.value=
+    p.unit;
+
+  confirmPrice.value=
+    last>0
+      ?last
+      :'';
+
+  updateComparison();
+
+  confirmModal.classList.remove(
+    'hidden'
+  );
+
+}
+
+
+/* ============================================================
+   COMPARATIVO
+============================================================ */
+
+function updateComparison(){
+
+  if(currentPurchaseIndex===null){
+    return;
+  }
+
+  const p=
+    state.products[currentPurchaseIndex];
+
+  if(!p){
+    return;
+  }
+
+  const catalog=
+    getCatalogProduct(p.name);
+
+  const last=
+    Number(
+      catalog?.last ||
+      p.last ||
+      0
+    );
+
+  const qty=
+    Number(confirmQty.value)||0;
+
+  const current=
+    Number(confirmPrice.value)||0;
+
+  const currentTotal=
+    qty*current;
+
+  const lastTotal=
+    qty*last;
+
+  let html=`
+
+    <div class="compare-row">
+
+      <span>Preço atual</span>
+
+      <strong class="compare-current">
+        ${current>0?money(current):'—'}
+      </strong>
+
+    </div>
+
+    <div class="compare-row">
+
+      <span>Último preço registrado</span>
+
+      <strong>
+        ${last>0?money(last):'Sem histórico'}
+      </strong>
+
+    </div>
+
+    <div class="compare-row">
+
+      <span>Quantidade</span>
+
+      <strong>
+        ${qty||'—'} ${p.unit}
+      </strong>
+
+    </div>
+
+    <div class="compare-row">
+
+      <span>Total desta compra</span>
+
+      <strong>
+        ${current>0?money(currentTotal):'—'}
+      </strong>
+
+    </div>
+
+  `;
+
+  comparisonBox.innerHTML=html;
+
+
+  if(!current){
+
+    comparisonMessage.innerHTML=
+      '<div class="compare-equal">'+
+      'Informe o preço atual para realizar o comparativo.'+
+      '</div>';
+
+    return;
+
+  }
+
+
+  if(!last){
+
+    comparisonMessage.innerHTML=
+      '<div class="compare-equal">'+
+      'Este produto ainda não possui preço histórico. '+
+      'O valor informado será usado como novo registro.'+
+      '</div>';
+
+    return;
+
+  }
+
+
+  const diff=
+    current-last;
+
+  const pctChange=
+    last
+      ?
+      (diff/last)*100
+      :
+      0;
+
+
+  if(diff>0){
+
+    comparisonMessage.innerHTML=
+      '<div class="compare-up">'+
+      '<strong>Preço maior que o último registro</strong><br>'+
+      'Aumento de '+money(diff)+
+      ' por '+p.unit+
+      ' ('+pctChange.toFixed(1)+'%).'+
+      '</div>';
+
+  }else if(diff<0){
+
+    comparisonMessage.innerHTML=
+      '<div class="compare-down">'+
+      '<strong>Preço menor que o último registro</strong><br>'+
+      'Economia de '+money(Math.abs(diff))+
+      ' por '+p.unit+
+      ' ('+Math.abs(pctChange).toFixed(1)+'%).'+
+      '</div>';
+
+  }else{
+
+    comparisonMessage.innerHTML=
+      '<div class="compare-equal">'+
+      '<strong>Mesmo preço do último registro.</strong>'+
+      '</div>';
+
+  }
+
+}
+
+
+/* ============================================================
+   CONFIRMAR COMPRA
+============================================================ */
+
+function confirmPurchaseItem(){
+
+  if(currentPurchaseIndex===null){
+    return;
+  }
+
+  const p=
+    state.products[currentPurchaseIndex];
+
+  if(!p){
+    return;
+  }
+
+  const qty=
+    Number(confirmQty.value);
+
+  const price=
+    Number(confirmPrice.value);
+
+  if(!qty || qty<=0){
+
+    return toast(
+      'Informe uma quantidade válida.'
+    );
+
+  }
+
+  if(!price || price<0){
+
+    return toast(
+      'Informe um preço válido.'
+    );
+
+  }
+
+
+  /*
+    Agora o valor se torna REAL.
+  */
+
+  p.qty=qty;
+
+  p.realPrice=price;
+
+  /*
+    Mantemos price para compatibilidade
+    com versões antigas.
+  */
+
+  p.price=price;
+
+  p.done=true;
+
+
+  /*
+    Atualiza o histórico do produto.
+  */
+
+  updateCatalogAfterPurchase(
+    p.name,
+    p.cat,
+    p.unit,
+    qty,
+    price
+  );
+
+
+  save();
+
+  closeConfirmModal();
+
+  currentPurchaseIndex=null;
+
+  render();
+
+  toast(
+    'Compra confirmada e preço registrado.'
+  );
+
+}
+
+
+/* ============================================================
+   ATUALIZA CATÁLOGO / HISTÓRICO
+============================================================ */
+
+function updateCatalogAfterPurchase(
+  name,
+  cat,
+  unit,
+  qty,
+  price
+){
+
+  let p=
+    getCatalogProduct(name);
+
+  if(!p){
+
+    p={
+      name,
+      cat,
+      unit,
+      last:price,
+      avg:price,
+      min:price,
+      max:price,
+      lastQty:qty,
+      historyCount:1
+    };
+
+    state.catalog.push(p);
+
+  }else{
+
+    const oldCount=
+      Number(p.historyCount)||0;
+
+    const oldAvg=
+      Number(p.avg)||0;
+
+    p.last=price;
+
+    p.lastQty=qty;
+
+    p.historyCount=
+      oldCount+1;
+
+    p.avg=
+      oldCount
+        ?
+        (
+          (oldAvg*oldCount)+price
+        )/(oldCount+1)
+        :
+        price;
+
+    p.min=
+      p.min>0
+        ?
+        Math.min(p.min,price)
+        :
+        price;
+
+    p.max=
+      Math.max(
+        Number(p.max)||0,
+        price
+      );
+
+  }
+
+
+  /*
+    Adiciona registro ao histórico interno.
+  */
+
+  state.internalHistory=
+    state.internalHistory||[];
+
+  state.internalHistory.push({
+
+    date:new Date().toISOString(),
+
+    name,
+
+    qty,
+
+    price,
+
+    total:qty*price
+
+  });
+
+}
+
+
+/* ============================================================
+   REMOVER ITEM DA LISTA
+============================================================ */
+
+function removeItem(index){
+
+  const p=
+    state.products[index];
+
+  if(!p){
+    return;
+  }
+
+  const message=
+    p.done
+      ?
+      `O item "${p.name}" já foi confirmado. Remover da lista mesmo assim?`
+      :
+      `Remover "${p.name}" da lista?`;
+
+  if(!confirm(message)){
+    return;
+  }
+
+  state.products.splice(index,1);
+
+  save();
+
+  render();
+
+  toast(
+    'Item removido da lista.'
+  );
+
+}
+
+
+/* ============================================================
+   LISTA HABITUAL
+============================================================ */
+
+function generateUsual(){
+
+  const candidates=
+    state.catalog.filter(
+      p=>p.historyCount>=2
+    );
+
+  if(!candidates.length){
+
+    return toast(
+      'Ainda não há histórico suficiente.'
+    );
+
+  }
+
+  let added=0;
+
+  candidates.forEach(p=>{
+
+    const exists=
+      state.products.some(
+        x=>norm(x.name)===norm(p.name)
+      );
+
+    if(exists){
+      return;
+    }
+
+    state.products.push({
+
+      name:p.name,
+
+      cat:p.cat,
+
+      qty:
+        state.settings.autoQty
+          ?
+          (p.lastQty||1)
+          :
+          1,
+
+      unit:p.unit,
+
+      /*
+        PREÇO REAL VAZIO
+      */
+
+      price:0,
+
+      realPrice:0,
+
+      /*
+        Apenas referência estimada.
+      */
+
+      estimatedPrice:
+        Number(
+          p.last ||
+          p.avg ||
+          0
+        ),
+
+      done:false,
+
+      last:p.last||0
+
+    });
+
+    added++;
+
+  });
+
+
+  save();
+
+  render();
+
+  toast(
+    added+
+    ' item(ns) adicionados à lista.'
+  );
+
+}
+
+
+/* ============================================================
+   FINALIZAR COMPRA
+============================================================ */
+
+function finishPurchase(){
+
+  if(!state.products.length){
+
+    return toast(
+      'A lista está vazia.'
+    );
+
+  }
+
+  const pending=
+    state.products.filter(
+      p=>!p.done
+    );
+
+  if(pending.length){
+
+    if(
+      !confirm(
+        `Existem ${pending.length} item(ns) ainda não confirmados.\n\n`+
+        `Eles não entrarão no valor real da compra.\n\n`+
+        `Deseja finalizar mesmo assim?`
+      )
+    ){
+
+      return;
+
+    }
+
+  }
+
+
+  const real=
+    realTotal();
+
+  const estimated=
+    estimatedTotal();
+
+
+  state.history.unshift({
+
+    date:
+      new Date().toLocaleString('pt-BR'),
+
+    budget:
+      state.budget,
+
+    total:
+      real,
+
+    estimated:
+      estimated,
+
+    items:
+      state.products.length,
+
+    confirmedItems:
+      state.products.filter(
+        p=>p.done
+      ).length,
+
+    products:
+      JSON.parse(
+        JSON.stringify(
+          state.products
+        )
+      )
+
+  });
+
+
+  state.products=[];
+
+  save();
+
+  render();
+
+  toast(
+    'Compra salva no histórico.'
+  );
+
+}
+
+
+/* ============================================================
+   HISTÓRICO
+============================================================ */
+
+function renderHistory(){
+
+  if(!state.history.length){
+
+    historyList.innerHTML=
+      '<div class="card empty">'+
+      'Nenhuma compra finalizada ainda.'+
+      '</div>';
+
+    return;
+
+  }
+
+
+  historyList.innerHTML=
+    state.history.map(h=>{
+
+      const estimated=
+        Number(
+          h.estimated
+        )||Number(h.total)||0;
+
+      const real=
+        Number(h.total)||0;
+
+      const difference=
+        estimated-real;
+
+      return `
+
+      <div
+        class="card"
+        style="margin-bottom:10px"
+      >
+
+        <div class="section-title">
+
+          <strong>
+            ${h.date}
+          </strong>
+
+          <span class="badge">
+            ${h.confirmedItems||h.items||0} itens
+          </span>
+
+        </div>
+
+        <div class="stat">
+          <span>Estimado</span>
+          <strong>${money(estimated)}</strong>
+        </div>
+
+        <div class="stat">
+          <span>Gasto real</span>
+          <strong>${money(real)}</strong>
+        </div>
+
+        <div class="stat">
+          <span>Diferença</span>
+          <strong class="${difference>=0?'ok':'danger'}">
+            ${money(difference)}
+          </strong>
+        </div>
+
+        <div class="stat">
+          <span>Saldo</span>
+          <strong class="${h.budget-real<0?'danger':'ok'}">
+            ${money(h.budget-real)}
+          </strong>
+        </div>
+
+      </div>
+
+      `;
+
+    }).join('');
+
+}
+
+
+/* ============================================================
+   ANÁLISE
+============================================================ */
+
+function renderAnalysis(){
+
+  const used=
+    state.catalog
+      .filter(p=>p.historyCount>0)
+      .sort(
+        (a,b)=>
+          b.historyCount-a.historyCount
+      );
+
+
+  let spend={};
+
+
+  BASE.history.forEach(x=>{
+
+    if(x[1]>0){
+
+      spend[x[0]]=
+        (spend[x[0]]||0)+
+        x[1]*x[2];
+
+    }
+
+  });
+
+
+  let top=
+    Object.entries(spend)
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0,6);
+
+
+  let totalHist=
+    Object.values(spend)
+      .reduce(
+        (a,b)=>a+b,
+        0
+      );
+
+
+  analysis.innerHTML=`
+
+  <div class="grid">
+
+    <div class="card">
+
+      <div class="metric-label">
+        Registros importados
+      </div>
+
+      <div class="metric">
+        ${BASE.history.length}
+      </div>
+
+    </div>
+
+    <div class="card">
+
+      <div class="metric-label">
+        Gasto dos registros
+      </div>
+
+      <div class="metric">
+        ${money(totalHist)}
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <div class="card section">
+
+    <h3 style="margin-top:0">
+      Produtos mais recorrentes
+    </h3>
+
+    ${
+      used.slice(0,8).map(
+        p=>`
+
+        <div class="stat">
+
+          <span>
+            ${p.name}
+          </span>
+
+          <strong>
+            ${p.historyCount}x
+          </strong>
+
+        </div>
+
+        `
+      ).join('')
+    }
+
+  </div>
+
+
+  <div class="card section">
+
+    <h3 style="margin-top:0">
+      Maior gasto acumulado
+    </h3>
+
+    ${
+      top.map(
+        x=>`
+
+        <div class="stat">
+
+          <span>
+            ${x[0]}
+          </span>
+
+          <strong>
+            ${money(x[1])}
+          </strong>
+
+        </div>
+
+        `
+      ).join('')
+    }
+
+  </div>
+
+  `;
+
+}
+
+
+/* ============================================================
+   PRODUTOS
+============================================================ */
+
+function renderProducts(){
+
+  const q=
+    norm(productSearch.value);
+
+  const c=
+    catFilter.value;
+
+
+  const arr=
+    state.catalog.filter(
+      p=>
+        (!q||norm(p.name).includes(q)) &&
+        (!c||p.cat===c)
+    );
+
+
+  productsList.innerHTML=
+    arr.map(p=>{
+
+      return `
+
+      <div class="product">
+
+        <div class="info">
+
+          <div class="name">
+            ${escapeHtml(p.name)}
+          </div>
+
+          <div class="meta">
+
+            ${p.cat}
+            ·
+            ${p.historyCount||0} registros
+            ·
+            último
+            ${p.last?money(p.last):'sem histórico'}
+
+          </div>
+
+        </div>
+
+        <div class="price">
+
+          ${p.avg?money(p.avg):'—'}
+
+        </div>
+
+        <button
+          class="secondary"
+          onclick="quickAdd(${JSON.stringify(p.name)})"
+        >
+          +
+        </button>
+
+      </div>
+
+      `;
+
+    }).join('') ||
+
+    '<div class="empty">Nenhum produto encontrado.</div>';
+
+}
+
+
+/* ============================================================
+   CONFIGURAÇÕES
+============================================================ */
+
+function renderSettings(){
+
+  dark.checked=
+    !!state.settings.dark;
+
+  autoPrice.checked=
+    state.settings.autoPrice;
+
+  autoQty.checked=
+    state.settings.autoQty;
+
+  hideDone.checked=
+    state.settings.hideDone;
+
+  alerts.checked=
+    state.settings.alerts;
+
+
+  sectorOrder.innerHTML=
+    state.order.map(
+      (c,i)=>`
+
+      <div class="product">
+
+        <div class="info">
+
+          <div class="name">
+            ${i+1}. ${c}
+          </div>
+
+        </div>
+
+        <button
+          class="secondary"
+          onclick="moveCat(${i},-1)"
+        >
+          ↑
+        </button>
+
+        <button
+          class="secondary"
+          onclick="moveCat(${i},1)"
+        >
+          ↓
+        </button>
+
+      </div>
+
+      `
+    ).join('');
+
+
+  document.documentElement.style.setProperty(
+    '--accent',
+    localStorage.getItem('accent')||'#2563eb'
+  );
+
+}
+
+
+/* ============================================================
+   ORÇAMENTO
+============================================================ */
+
+function openBudget(){
+
+  let v=
+    prompt(
+      'Valor disponível para esta compra:',
+      state.budget
+        ?
+        state.budget.toFixed(2).replace('.',',')
+        :
+        ''
+    );
+
+
+  if(v!==null){
+
+    v=
+      Number(
+        v.replace(',','.')
+      );
+
+
+    if(
+      !isNaN(v)&&
+      v>=0
+    ){
+
+      state.budget=v;
+
+      save();
+
+      render();
+
+    }
+
+  }
+
+}
+
+
+/* ============================================================
+   HISTÓRICO
+============================================================ */
+
+function clearHistory(){
+
+  if(
+    confirm(
+      'Limpar o histórico de compras finalizadas?'
+    )
+  ){
+
+    state.history=[];
+
+    save();
+
+    render();
+
+  }
+
+}
+
+
+/* ============================================================
+   SETTINGS
+============================================================ */
+
+function saveSettings(){
+
+  state.settings.autoPrice=
+    autoPrice.checked;
+
+  state.settings.autoQty=
+    autoQty.checked;
+
+  state.settings.hideDone=
+    hideDone.checked;
+
+  state.settings.alerts=
+    alerts.checked;
+
+  save();
+
+  render();
+
+}
+
+function setTheme(){
+
+  state.settings.dark=
+    dark.checked;
+
+  localStorage.setItem(
+    'theme',
+    dark.checked
+      ?
+      'dark'
+      :
+      'light'
+  );
+
+  save();
+
+  applyDark();
+
+}
+
+function applyDark(){
+
+  if(state.settings.dark){
+
+    document.documentElement.style.setProperty(
+      '--bg','#111827'
+    );
+
+    document.documentElement.style.setProperty(
+      '--card','#1f2937'
+    );
+
+    document.documentElement.style.setProperty(
+      '--text','#f9fafb'
+    );
+
+    document.documentElement.style.setProperty(
+      '--line','#374151'
+    );
+
+    document.documentElement.style.setProperty(
+      '--muted','#9ca3af'
+    );
+
+  }else{
+
+    document.documentElement.style.setProperty(
+      '--bg','#f4f6f8'
+    );
+
+    document.documentElement.style.setProperty(
+      '--card','#fff'
+    );
+
+    document.documentElement.style.setProperty(
+      '--text','#111827'
+    );
+
+    document.documentElement.style.setProperty(
+      '--line','#e5e7eb'
+    );
+
+    document.documentElement.style.setProperty(
+      '--muted','#6b7280'
+    );
+
+  }
+
+}
+
+
+/* ============================================================
+   ORDEM
+============================================================ */
+
+function moveCat(i,d){
+
+  const j=i+d;
+
+  if(
+    j<0 ||
+    j>=state.order.length
+  ){
+
+    return;
+
+  }
+
+  [
+    state.order[i],
+    state.order[j]
+  ]=[
+    state.order[j],
+    state.order[i]
+  ];
+
+  save();
+
+  render();
+
+}
+
+
+/* ============================================================
+   BACKUP
+============================================================ */
+
+function exportData(){
+
+  const blob=
+    new Blob(
+      [
+        JSON.stringify(
+          state,
+          null,
+          2
+        )
+      ],
+      {
+        type:'application/json'
+      }
+    );
+
+
+  const a=
+    document.createElement('a');
+
+  a.href=
+    URL.createObjectURL(blob);
+
+  a.download=
+    'compra-facil-backup.json';
+
+  a.click();
+
+  URL.revokeObjectURL(
+    a.href
+  );
+
+}
+
+
+function importData(e){
+
+  const f=
+    e.target.files[0];
+
+  if(!f){
+    return;
+  }
+
+  const r=
+    new FileReader();
+
+
+  r.onload=()=>{
+
+    try{
+
+      const x=
+        JSON.parse(
+          r.result
+        );
+
+      if(!x.catalog){
+        throw Error();
+      }
+
+      state=x;
+
+      /*
+        Garante compatibilidade
+        com a nova estrutura.
+      */
+
+      if(!state.settings){
+
+        state.settings={
+          dark:false,
+          autoPrice:true,
+          autoQty:true,
+          hideDone:false,
+          alerts:true
+        };
+
+      }
+
+      if(!state.order){
+        state.order=CATS.slice();
+      }
+
+      state.products.forEach(p=>{
+
+        if(p.estimatedPrice===undefined){
+
+          p.estimatedPrice=
+            p.last ||
+            getCatalogProduct(p.name)?.last ||
+            getCatalogProduct(p.name)?.avg ||
+            0;
+
+        }
+
+        if(!p.done){
+
+          p.price=0;
+          p.realPrice=0;
+
+        }
+
+      });
+
+      save();
+
+      render();
+
+      toast(
+        'Backup importado.'
+      );
+
+    }catch(err){
+
+      toast(
+        'Arquivo inválido.'
+      );
+
+    }
+
+  };
+
+
+  r.readAsText(f);
+
+}
+
+
+/* ============================================================
+   RESET
+============================================================ */
+
+function resetApp(){
+
+  if(
+    confirm(
+      'Isso apaga seus dados locais e restaura a base da V3. Continuar?'
+    )
+  ){
+
+    localStorage.removeItem(
+      KEY
+    );
+
+    location.reload();
+
+  }
+
+}
+
+
+/* ============================================================
+   TABS
+============================================================ */
+
+function tab(id,btn){
+
+  [
+    'buy',
+    'products',
+    'history',
+    'analysis',
+    'settings'
+  ].forEach(
+    x=>
+      document
+        .getElementById('tab-'+x)
+        .classList
+        .toggle(
+          'hidden',
+          x!==id
+        )
+  );
+
+
+  document
+    .querySelectorAll('.tab')
+    .forEach(
+      x=>
+        x.classList.remove(
+          'active'
+        )
+    );
+
+
+  btn.classList.add(
+    'active'
+  );
+
+}
+
+
+/* ============================================================
+   MODAL CONFIRMAÇÃO
+============================================================ */
+
+function closeConfirmModal(){
+
+  confirmModal.classList.add(
+    'hidden'
+  );
+
+  currentPurchaseIndex=null;
+
+}
+
+
+/* ============================================================
+   TOAST
+============================================================ */
+
+function toast(msg){
+
+  toastEl.textContent=
+    msg;
+
+  toastEl.classList.add(
+    'show'
+  );
+
+  setTimeout(
+    ()=>
+      toastEl.classList.remove(
+        'show'
+      ),
+    1800
+  );
+
+}
+
+
+/* ============================================================
+   ESCAPE HTML
+============================================================ */
+
+function escapeHtml(value){
+
+  return String(value)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+
+}
+
+
+/* ============================================================
+   ELEMENTOS
+============================================================ */
+
+const {
+  mBudget,
+  mEstimated,
+  mReal,
+  mBalance,
+  mEstimatedBalance,
+  mItems,
+  bar,
+  budgetMsg,
+  buyList,
+  productSearch,
+  catFilter,
+  productsList,
+  historyList,
+  analysis,
+  sectorOrder,
+  dark,
+  autoPrice,
+  autoQty,
+  hideDone,
+  alerts,
+  modal,
+  pname,
+  pcat,
+  pqty,
+  punit,
+  pprice,
+  priceHint,
+  suggestions,
+  confirmModal,
+  confirmProductName,
+  confirmQty,
+  confirmUnit,
+  confirmPrice,
+  comparisonBox,
+  comparisonMessage
+}=(()=>{
+
+  const ids=[
+
+    'mBudget',
+    'mEstimated',
+    'mReal',
+    'mBalance',
+    'mEstimatedBalance',
+    'mItems',
+    'bar',
+    'budgetMsg',
+    'buyList',
+    'productSearch',
+    'catFilter',
+    'productsList',
+    'historyList',
+    'analysis',
+    'sectorOrder',
+    'dark',
+    'autoPrice',
+    'autoQty',
+    'hideDone',
+    'alerts',
+    'modal',
+    'pname',
+    'pcat',
+    'pqty',
+    'punit',
+    'pprice',
+    'priceHint',
+    'suggestions',
+    'confirmModal',
+    'confirmProductName',
+    'confirmQty',
+    'confirmUnit',
+    'confirmPrice',
+    'comparisonBox',
+    'comparisonMessage'
+
+  ];
+
+  const o={};
+
+  ids.forEach(
+    id=>
+      o[id]=
+        document.getElementById(id)
+  );
+
+  return o;
+
+})();
+
+
+const pct=
+  document.getElementById(
+    'pct'
+  );
+
+const toastEl=
+  document.getElementById(
+    'toast'
+  );
+
+
+/* ============================================================
+   FILTRO DE CATEGORIAS
+============================================================ */
+
+CATS.forEach(
+  c=>
+    catFilter.insertAdjacentHTML(
+      'beforeend',
+      `<option>${c}</option>`
+    )
+);
+
+
+/* ============================================================
+   INICIALIZAÇÃO
+============================================================ */
+
+applyDark();
+
+save();
+
 render();
-</script></body></html>
+
+</script>
+
+</body>
+</html>
