@@ -4,6 +4,16 @@ import re
 _original = Path(__file__).with_name("app_original.py")
 _source = _original.read_text(encoding="utf-8")
 
+# O orçamento de correção deve existir somente dentro da aba Compra.
+# Remove a implementação antiga que ficava entre a criação das abas e o confirm_dialog.
+_source = re.sub(
+    r'\n# Ajuste rápido do orçamento da compra em andamento\.\nif budget > 0:.*?(?=\nif st\.session_state\.get\("confirm_item"\):)',
+    '\n',
+    _source,
+    count=1,
+    flags=re.S,
+)
+
 # Corrige estatísticas ao excluir histórico.
 _source = re.sub(r"def delete_history_purchase\(pid\):.*?\ndef parse_history", '''def delete_history_purchase(pid):
     db("itens_compra","DELETE",params={"compra_id":f"eq.{pid}"})
@@ -62,7 +72,7 @@ def budget_dialog(action):
 '''
 _source=_source.replace('@st.dialog("Adicionar produto à lista de compras")\ndef add_list_dialog',_insert+'@st.dialog("Adicionar produto à lista de compras")\ndef add_list_dialog',1)
 
-# Fluxo principal da compra. Corrigir orçamento fica DENTRO da aba Compra.
+# Fluxo principal da compra. Corrigir orçamento fica somente dentro da aba Compra.
 _old=re.search(r"with buy:\n.*?(?=with prod:\n)",_source,flags=re.S)
 _new='''with buy:
     st.subheader("Lista de compras")
