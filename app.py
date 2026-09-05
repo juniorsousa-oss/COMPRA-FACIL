@@ -13,6 +13,42 @@ _source = re.sub(
     flags=re.S,
 )
 
+# Mostra a variação entre o preço informado e o preço estimado durante a confirmação.
+_source = re.sub(
+    r'def confirm_dialog\(item\):.*?\n@st\.dialog\("Excluir histórico"\)',
+    '''def confirm_dialog(item):
+    st.markdown(f"### {item['nome_produto']}")
+    qty=num(item.get("quantidade")); estimated=num(item.get("preco_estimado"))
+    st.caption(f"Quantidade: {qty:g} {item.get('unidade','un.')}")
+    price=st.number_input("Preço unitário pago",min_value=0.,value=num(item.get("preco_unitario")) or estimated,step=.01,format="%.2f",key=f"confirm_price_{item['id']}")
+    variation=price-estimated
+    variation_pct=(variation/estimated*100) if estimated else None
+    c1,c2=st.columns(2)
+    with c1:
+        st.metric("Preço estimado",money(estimated))
+    with c2:
+        if variation_pct is None:
+            st.metric("Variação",money(variation))
+        else:
+            st.metric("Variação",money(variation),delta=f"{variation_pct:+.1f}%")
+    if estimated:
+        if variation > 0:
+            st.warning(f"Preço {money(variation)} acima do estimado ({variation_pct:+.1f}%).")
+        elif variation < 0:
+            st.success(f"Economia de {money(abs(variation))} ({abs(variation_pct):.1f}%) em relação ao estimado.")
+        else:
+            st.info("Preço igual ao valor estimado.")
+    st.metric("Total do item",money(qty*price))
+    a,b=st.columns(2)
+    if a.button("Cancelar",use_container_width=True): st.session_state.pop("confirm_item",None); st.rerun()
+    if b.button("Confirmar",type="primary",use_container_width=True): edit_item(item["id"],preco_unitario=price,confirmado=True); st.session_state.pop("confirm_item",None); st.rerun()
+
+@st.dialog("Excluir histórico")''',
+    _source,
+    count=1,
+    flags=re.S,
+)
+
 # Corrige estatísticas ao excluir histórico.
 _source = re.sub(r"def delete_history_purchase\(pid\):.*?\ndef parse_history", '''def delete_history_purchase(pid):
     db("itens_compra","DELETE",params={"compra_id":f"eq.{pid}"})
@@ -158,7 +194,7 @@ _new='''with buy:
                 if st.button("Salvar alteração",type="primary",use_container_width=True,key=f"edit_save_{item['id']}"):
                     p=find_product(products,edit_name)
                     if p:
-                        edit_item(item["id"],nome_produto=edit_name,categoria=p.get("categoria","Mercearia"),unidade=p.get("un.","un."),quantidade=edit_qty,preco_estimado=num(p.get("ultimo_preco")),preco_unitario=0,confirmado=False); st.rerun()
+                        edit_item(item["id"],nome_produto=edit_name,categoria=p.get("categoria","Mercearia"),unidade=p.get("unidade","un."),quantidade=edit_qty,preco_estimado=num(p.get("ultimo_preco")),preco_unitario=0,confirmado=False); st.rerun()
         with d3:
             if st.button("Excluir",key=f"d{item['id']}",use_container_width=True):
                 remove_item(item["id"]); st.rerun()
