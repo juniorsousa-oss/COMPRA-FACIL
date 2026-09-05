@@ -11,3 +11,45 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validar Python
         run: python -m py_compile app.py
+      - name: Corrigir estatisticas apos excluir historico
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app.py')
+          s=p.read_text(encoding='utf-8')
+          old='''def delete_history_purchase(pid): db("itens_compra","DELETE",params={"compra_id":f"eq.{pid}"}); db("compras","DELETE",params={"id":f"eq.{pid}"}); clear()'''
+          new='''def rebuild_product_stats_after_history_delete():
+              products=db("produtos",params={"select":"id"})
+              items=db("itens_compra",params={"select":"produto_id,compra_id,preco_unitario,quantidade,criado_em"})
+              grouped={}
+              for x in items:
+                  if x.get("produto_id") is not None: grouped.setdefault(str(x["produto_id"]),[]).append(x)
+              for p in products:
+                  rows=grouped.get(str(p.get("id")),[])
+                  if rows:
+                      valid=[x for x in rows if num(x.get("preco_unitario"))>0]
+                      prices=[num(x.get("preco_unitario")) for x in valid]
+                      latest=sorted(rows,key=lambda x:str(x.get("criado_em","")))[-1]
+                      data={"ultimo_preco":num(latest.get("preco_unitario")),"preco_medio":sum(prices)/len(prices) if prices else 0,"menor_preco":min(prices) if prices else 0,"maior_preco":max(prices) if prices else 0,"ultima_quantidade":num(latest.get("quantidade")) or 1,"quantidade_compras":len({str(x.get("compra_id")) for x in rows}),"atualizado_em":now()}
+                  else:
+                      data={"ultimo_preco":0,"preco_medio":0,"menor_preco":0,"maior_preco":0,"ultima_quantidade":1,"quantidade_compras":0,"atualizado_em":now()}
+                  db("produtos","PATCH",params={"id":f"eq.{p['id']}"},data=data)
+
+def delete_history_purchase(pid):
+    db("itens_compra","DELETE",params={"compra_id":f"eq.{pid}"})
+    db("compras","DELETE",params={"id":f"eq.{pid}"})
+    rebuild_product_stats_after_history_delete()
+    clear()'''
+          if old not in s:
+              raise SystemExit('funcao alvo nao encontrada')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit correcao
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: zerar estatisticas apos excluir historico'
+          git push
