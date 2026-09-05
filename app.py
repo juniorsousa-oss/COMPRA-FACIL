@@ -1,8 +1,40 @@
 from pathlib import Path
+import re
 
 # Executa a versão original, mas aplica correções de forma segura antes de iniciar o Streamlit.
 _original = Path(__file__).with_name("app_original.py")
 _source = _original.read_text(encoding="utf-8")
+
+# Recalcula TODOS os indicadores dos produtos a partir do histórico atual.
+# Se um produto não possui mais itens no histórico, seus indicadores voltam a zero.
+_old_rebuild = re.search(r"def rebuild_product_stats\(.*?\ndef find_product", _source, flags=re.S)
+if not _old_rebuild:
+    raise RuntimeError("Não foi possível localizar rebuild_product_stats para aplicar a correção.")
+_new_rebuild = '''def rebuild_product_stats(products):
+    items=db("itens_compra",params={"select":"produto_id,compra_id,preco_unitario,quantidade,criado_em"}); grouped={}
+    for x in items:
+        if x.get("produto_id") is not None: grouped.setdefault(str(x["produto_id"]),[]).append(x)
+    updated=0
+    for p in products:
+        rows=grouped.get(str(p.get("id")),[])
+        if not rows:
+            db("produtos","PATCH",params={"id":f"eq.{p['id']}"},data={"ultimo_preco":0,"preco_medio":0,"menor_preco":0,"maior_preco":0,"ultima_quantidade":1,"quantidade_compras":0,"atualizado_em":now()})
+            updated+=1
+            continue
+        valid=[x for x in rows if num(x.get("preco_unitario"))>0]; prices=[num(x.get("preco_unitario")) for x in valid]; latest=sorted(rows,key=lambda x:str(x.get("criado_em","")))[-1]
+        db("produtos","PATCH",params={"id":f"eq.{p['id']}"},data={"ultimo_preco":num(latest.get("preco_unitario")),"preco_medio":sum(prices)/len(prices) if prices else 0,"menor_preco":min(prices) if prices else 0,"maior_preco":max(prices) if prices else 0,"ultima_quantidade":num(latest.get("quantidade")) or 1,"quantidade_compras":len({str(x.get("compra_id")) for x in rows}),"atualizado_em":now()}); updated+=1
+    clear(); return updated
+def find_product'''
+_source = _source[:_old_rebuild.start()] + _new_rebuild + _source[_old_rebuild.end():]
+
+# Ao excluir qualquer compra, os indicadores dos produtos são reconstruídos imediatamente.
+_old_delete = re.search(r"def delete_history_purchase\(pid\):.*?\ndef parse_history", _source, flags=re.S)
+if not _old_delete:
+    raise RuntimeError("Não foi possível localizar delete_history_purchase para aplicar a correção.")
+_new_delete = '''def delete_history_purchase(pid):
+    db("itens_compra","DELETE",params={"compra_id":f"eq.{pid}"}); db("compras","DELETE",params={"id":f"eq.{pid}"}); rebuild_product_stats(get_products()); clear()
+def parse_history'''
+_source = _source[:_old_delete.start()] + _new_delete + _source[_old_delete.end():]
 
 # Cada nova carga deve começar sem decisões antigas dos widgets de revisão.
 _old_stage = '''def stage_history(uploaded,products):\n    rows=parse_history(uploaded); exact=[]; unmatched=[]\n'''
