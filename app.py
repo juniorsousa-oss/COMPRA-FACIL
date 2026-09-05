@@ -2,7 +2,7 @@ import os
 import io
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 
 import pandas as pd
 import requests
@@ -37,8 +37,16 @@ def db(table,method="GET",params=None,data=None):
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def num(v):
-    try:return float(v or 0)
-    except:return 0.0
+    try:
+        if pd.isna(v): return 0.0
+        if isinstance(v,str):
+            s=v.strip().replace("R$","").replace(" ","")
+            if "," in s and "." in s: s=s.replace(".","").replace(",",".")
+            elif "," in s: s=s.replace(",",".")
+            v=s
+        return float(v or 0)
+    except:
+        return 0.0
 def money(v): return f"R$ {num(v):,.2f}".replace(",","X").replace(".",",").replace("X",".")
 def norm(v):
     s=unicodedata.normalize("NFKD",str(v or "")).encode("ascii","ignore").decode().lower().strip()
@@ -84,6 +92,20 @@ def finish(items,budget):
     if rows: db("itens_compra","POST",data=rows)
     db("lista_atual","DELETE",params={"id":"gt.0"});clear()
 
+@st.dialog("Adicionar produto à lista de compras")
+def add_to_list_dialog(products):
+    names=[p.get("nome","") for p in products if p.get("nome")]
+    if not names:
+        st.info("Cadastre produtos primeiro na aba Produtos.")
+        return
+    selected=st.selectbox("Produto",names,key="buy_product_select")
+    qty=st.number_input("Quantidade",min_value=.001,value=1.,step=1.,format="%.2f",key="buy_product_qty")
+    p=next((x for x in products if x.get("nome")==selected),None)
+    if st.button("Adicionar à lista",type="primary",use_container_width=True,key="buy_add_confirm"):
+        if p:
+            add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco")))
+            st.rerun()
+
 @st.dialog("Confirmar compra do item")
 def confirm_dialog(item):
     st.markdown(f"### {item['nome_produto']}")
@@ -93,6 +115,26 @@ def confirm_dialog(item):
     a,b=st.columns(2)
     if a.button("Cancelar",use_container_width=True): st.rerun()
     if b.button("Confirmar",type="primary",use_container_width=True): edit_item(item["id"],preco_unitario=price,confirmado=True);st.rerun()
+
+@st.dialog("Adicionar novo produto")
+def new_product_dialog(products):
+    cats=sorted(set(["Mercearia","Hortifruti","Carnes","Bebidas","Limpeza","Higiene","Padaria"]+[p.get("categoria","Mercearia") for p in products]))
+    with st.form("new_product_form"):
+        name=st.text_input("Nome")
+        cat=st.selectbox("Categoria",cats)
+        a,b,c=st.columns(3)
+        unit=a.text_input("Unidade",value="un.")
+        qty=b.number_input("Quantidade",min_value=.001,value=1.,step=1.)
+        price=c.number_input("Preço estimado",min_value=0.,value=0.,step=.01,format="%.2f")
+        if st.form_submit_button("Cadastrar produto",type="primary",use_container_width=True):
+            if not name.strip():
+                st.error("Informe o nome do produto.")
+            elif any(norm(p.get("nome"))==norm(name) for p in products):
+                st.error("Esse produto já está cadastrado.")
+            else:
+                save_product(name,cat,unit,price,qty)
+                st.success("Produto cadastrado.")
+                st.rerun()
 
 # Excel import: only products not already registered are inserted. Existing products are never deleted or overwritten.
 def import_products_excel(uploaded,existing):
@@ -133,6 +175,78 @@ def insert_imported(rows):
     if rows: db("produtos","POST",data=rows)
     clear()
 
+def history_rows():
+    rows=[]
+    for compra in get_history():
+        items=db("itens_compra",params={"select":"*","compra_id":f"eq.{compra['id']}","order":"id.asc"})
+        for item in items:
+            q=num(item.get("quantidade"));unit_price=num(item.get("preco_unitario"));last=num(item.get("ultimo_preco"))
+            rows.append({"PRODUTO":item.get("nome_produto",""),"VALOR UNITÁRIO":unit_price,"QNT":q,"ÚLTIMO VALOR":last,"VALOR TOTAL":q*unit_price})
+    return rows
+
+def excel_bytes(df):
+    output=io.BytesIO()
+    with pd.ExcelWriter(output,engine="openpyxl") as writer:
+        df.to_excel(writer,index=False,sheet_name="Historico")
+        ws=writer.book["Historico"]
+        ws.freeze_panes="A2"
+        ws.auto_filter.ref=ws.dimensions
+        from openpyxl.styles import Font, PatternFill, Alignment
+        widths={"A":34,"B":18,"C":12,"D":18,"E":18}
+        for col,width in widths.items(): ws.column_dimensions[col].width=width
+        for cell in ws[1]:
+            cell.font=Font(bold=True,color="FFFFFF")
+            cell.fill=PatternFill("solid",fgColor="2F6F5E")
+            cell.alignment=Alignment(horizontal="center")
+        for row in ws.iter_rows(min_row=2):
+            row[1].number_format='R$ #,##0.00'
+            row[2].number_format='0.00'
+            row[3].number_format='R$ #,##0.00'
+            row[4].number_format='R$ #,##0.00'
+    output.seek(0)
+    return output.getvalue()
+
+def import_history_excel(uploaded,when,budget):
+    try:
+        df=pd.read_excel(uploaded,dtype=object)
+    except Exception as e: raise RuntimeError(f"Não consegui ler o Excel: {e}")
+    if df.empty: raise RuntimeError("A planilha está vazia.")
+    original=list(df.columns)
+    normalized={norm(c):c for c in original}
+    def col(*names):
+        for name in names:
+            if norm(name) in normalized:return normalized[norm(name)]
+        return None
+    c_prod=col("PRODUTO","Produto","Nome")
+    c_unit=col("VALOR UNITÁRIO","Valor Unitário","Preço Unitário","Preço")
+    c_qty=col("QNT","Quantidade","Qtd","Qtde")
+    c_last=col("ÚLTIMO VALOR","Ultimo Valor","Último Preço","Ultimo Preco")
+    if not c_prod or not c_unit or not c_qty:
+        raise RuntimeError("O Excel precisa conter as colunas PRODUTO, VALOR UNITÁRIO e QNT.")
+    rows=[]
+    for _,r in df.iterrows():
+        name=str(r.get(c_prod,"") or "").strip()
+        if not name: continue
+        q=num(r.get(c_qty));p=num(r.get(c_unit));last=num(r.get(c_last)) if c_last else 0
+        if q<=0: continue
+        rows.append({"name":name,"qty":q,"price":p,"last":last})
+    if not rows: raise RuntimeError("Nenhum item válido foi encontrado no Excel.")
+    real=sum(x["qty"]*x["price"] for x in rows)
+    estimated=sum(x["qty"]*(x["last"] if x["last"]>0 else x["price"]) for x in rows)
+    c=db("compras","POST",data={"orcamento":num(budget),"valor_estimado":estimated,"valor_real":real,"saldo":num(budget)-real,"quantidade_itens":len(rows),"data_compra":f"{when.isoformat()}T12:00:00+00:00"})[0]
+    products=get_products()
+    item_rows=[]
+    for x in rows:
+        existing=next((p for p in products if norm(p.get("nome"))==norm(x["name"])),None)
+        cat=existing.get("categoria","Mercearia") if existing else "Mercearia"
+        unit=existing.get("unidade","un.") if existing else "un."
+        previous=x["last"] if x["last"]>0 else (num(existing.get("ultimo_preco")) if existing else 0)
+        item_rows.append({"compra_id":c["id"],"produto_id":existing.get("id") if existing else None,"nome_produto":x["name"],"quantidade":x["qty"],"unidade":unit,"preco_estimado":previous,"preco_unitario":x["price"],"valor_total":x["qty"]*x["price"],"ultimo_preco":previous,"variacao_preco":x["price"]-previous,"confirmado":True})
+        save_product(x["name"],cat,unit,x["price"],x["qty"])
+    if item_rows: db("itens_compra","POST",data=item_rows)
+    clear()
+    return len(rows),real
+
 try:
     products=get_products();current=get_current();budget=get_budget();history=get_history()
 except Exception as e:
@@ -153,7 +267,7 @@ buy,prod,hist,ana,config=st.tabs(["🛒 Compra","📦 Produtos","📜 Histórico
 
 with buy:
     st.subheader("Lista de compras")
-    if not current: st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong><br>Adicione um produto abaixo.</div>',unsafe_allow_html=True)
+    if not current: st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong><br>Adicione um produto cadastrado abaixo.</div>',unsafe_allow_html=True)
     for item in current:
         ok=bool(item.get("confirmado"));total=num(item.get("quantidade"))*num(item.get("preco_estimado"))
         st.markdown('<div class="card">',unsafe_allow_html=True)
@@ -176,17 +290,12 @@ with buy:
         with d2:
             if st.button("Excluir",key=f"d{item['id']}",use_container_width=True): remove_item(item["id"]);st.rerun()
         st.markdown('</div>',unsafe_allow_html=True)
-    st.divider();st.markdown("### Adicionar produto")
-    names=[p.get("nome","") for p in products];selected=st.selectbox("Produto existente",["+ Novo produto"]+names)
-    existing=next((p for p in products if p.get("nome")==selected),None)
-    cats=sorted(set(["Mercearia","Hortifruti","Carnes","Bebidas","Limpeza","Higiene","Padaria"]+[p.get("categoria","Mercearia") for p in products]))
-    with st.form("add"):
-        name=st.text_input("Nome",value=existing.get("nome","") if existing else "")
-        cat=st.selectbox("Categoria",cats,index=cats.index(existing.get("categoria")) if existing and existing.get("categoria") in cats else 0)
-        a,b,c=st.columns(3);unit=a.text_input("Unidade",value=existing.get("unidade","un.") if existing else "un.");qty=b.number_input("Quantidade",min_value=.001,value=num(existing.get("ultima_quantidade")) or 1. if existing else 1.,step=1.);price=c.number_input("Preço estimado",min_value=0.,value=num(existing.get("ultimo_preco")) if existing else 0.,step=.01,format="%.2f")
-        if st.form_submit_button("Adicionar à lista",type="primary",use_container_width=True):
-            if not name.strip(): st.error("Informe o nome do produto.")
-            else: add_item(name,cat,unit,qty,price);st.rerun()
+    st.divider()
+    if products:
+        if st.button("Adicionar produto à lista de compras",type="primary",use_container_width=True,key="open_add_list"):
+            add_to_list_dialog(products)
+    else:
+        st.info("Nenhum produto cadastrado. Acesse a aba Produtos para cadastrar o primeiro.")
     st.divider();st.markdown("### Fechamento")
     new_budget=st.number_input("Orçamento / dinheiro disponível",min_value=0.,value=budget,step=10.,format="%.2f")
     a,b=st.columns(2)
@@ -197,6 +306,8 @@ with buy:
 
 with prod:
     st.subheader("Produtos")
+    if st.button("Adicionar novo produto",type="primary",use_container_width=True,key="open_new_product"):
+        new_product_dialog(products)
     st.info("Importação incremental: produtos que já existem no banco são ignorados. Produtos antigos não são apagados nem alterados.")
     with st.expander("📥 Importar lista Excel",expanded=False):
         st.write("Envie um arquivo **.xlsx**. A coluna de produto pode se chamar: Nome, Produto, Descrição, Item ou Material.")
@@ -220,10 +331,34 @@ with prod:
 
 with hist:
     st.subheader("Histórico de compras")
+    st.markdown("### Excel")
+    st.caption("O arquivo segue o mesmo padrão da planilha: PRODUTO · VALOR UNITÁRIO · QNT · ÚLTIMO VALOR · VALOR TOTAL.")
+    all_rows=history_rows()
+    if all_rows:
+        export_df=pd.DataFrame(all_rows,columns=["PRODUTO","VALOR UNITÁRIO","QNT","ÚLTIMO VALOR","VALOR TOTAL"])
+        st.download_button("Exportar histórico para Excel",data=excel_bytes(export_df),file_name="historico_compras.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+    else:
+        template=pd.DataFrame([{"PRODUTO":"Arroz","VALOR UNITÁRIO":16.90,"QNT":1.00,"ÚLTIMO VALOR":0.00,"VALOR TOTAL":16.90}],columns=["PRODUTO","VALOR UNITÁRIO","QNT","ÚLTIMO VALOR","VALOR TOTAL"])
+        st.download_button("Baixar modelo Excel",data=excel_bytes(template),file_name="modelo_historico_compras.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+    with st.expander("Importar histórico do Excel",expanded=False):
+        st.caption("Obrigatórias: PRODUTO, VALOR UNITÁRIO e QNT. ÚLTIMO VALOR é opcional; VALOR TOTAL é recalculado pelo sistema.")
+        import_date=st.date_input("Data da compra importada",value=date.today(),key="history_import_date")
+        import_budget=st.number_input("Orçamento da compra",min_value=0.,value=0.,step=10.,format="%.2f",key="history_import_budget")
+        hist_file=st.file_uploader("Escolher Excel do histórico",type=["xlsx","xlsm"],key="excel_history")
+        if hist_file is not None:
+            try:
+                preview=pd.read_excel(hist_file,dtype=object)
+                st.dataframe(preview,use_container_width=True,hide_index=True)
+                if st.button("Importar esta compra para o histórico",type="primary",use_container_width=True,key="history_import_confirm"):
+                    n,total=import_history_excel(hist_file,import_date,import_budget)
+                    st.success(f"{n} itens importados para o histórico. Total real: {money(total)}")
+                    st.rerun()
+            except Exception as e: st.error(f"Erro na importação: {e}")
+    st.divider()
     if not history: st.markdown('<div class="empty">Nenhuma compra finalizada ainda.</div>',unsafe_allow_html=True)
     for p in history:
-        date=str(p.get("data_compra",""))[:16].replace("T"," ")
-        with st.expander(f"{date} · {money(p.get('valor_real'))} · {p.get('quantidade_itens',0)} itens"):
+        date_text=str(p.get("data_compra",""))[:16].replace("T"," ")
+        with st.expander(f"{date_text} · {money(p.get('valor_real'))} · {p.get('quantidade_itens',0)} itens"):
             a,b,c,d=st.columns(4);a.metric("Orçamento",money(p.get("orcamento")));b.metric("Estimado",money(p.get("valor_estimado")));c.metric("Real",money(p.get("valor_real")));d.metric("Saldo",money(p.get("saldo")))
             items=db("itens_compra",params={"select":"*","compra_id":f"eq.{p['id']}","order":"id.asc"})
             if items: st.dataframe(pd.DataFrame([{"Produto":x.get("nome_produto"),"Qtd":num(x.get("quantidade")),"Un":x.get("unidade"),"Estimado":money(x.get("preco_estimado")),"Pago":money(x.get("preco_unitario")),"Total":money(x.get("valor_total")),"Confirmado":"Sim" if x.get("confirmado") else "Não"} for x in items]),use_container_width=True,hide_index=True)
