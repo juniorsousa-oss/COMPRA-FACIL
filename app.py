@@ -136,6 +136,11 @@ def commit_history(pending,action_all=None):
             resolved.append({**x,"product":p})
         else: resolved.append({**x,"product":None})
     if not resolved: st.session_state.pop("pending_history",None); return 0,0,0,ignored
+    # Nunca descartar itens silenciosamente: todos os itens pendentes devem ter uma decisao explicita.
+    # Se houver item sem acao valida, cadastra como novo para preservar a carga.
+    for x in pending["unmatched"]:
+        if x.get("action") not in ("vincular", "novo", "ignorar"):
+            x["action"]="novo"
     real=sum(x["qty"]*x["price"] for x in resolved); estimated=sum(x["qty"]*(x["last"] if x["last"]>0 else (num(x["product"].get("ultimo_preco")) if x.get("product") else x["price"])) for x in resolved)
     c=db("compras","POST",data={"orcamento":real,"valor_estimado":estimated,"valor_real":real,"saldo":0,"quantidade_itens":len(resolved),"data_compra":now()})[0]; rows=[]
     for x in resolved:
@@ -173,6 +178,10 @@ def mapping_dialog(pending):
             else: x["action"]="ignorar"; x["selected"]=None
         else:
             x["action"]="novo" if general.startswith("Cadastrar") else ("ignorar" if general.startswith("Ignorar") else "vincular")
+            if x["action"]=="vincular":
+                sims=x.get("suggestions",[])
+                x["selected"]=str(sims[0][1]["id"]) if sims else None
+                if not x["selected"]: x["action"]="novo"
         st.divider()
     a,b=st.columns(2)
     if a.button("Cancelar",use_container_width=True): st.session_state.pop("pending_history",None); st.rerun()
