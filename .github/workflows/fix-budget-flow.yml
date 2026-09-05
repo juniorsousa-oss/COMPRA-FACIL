@@ -59,3 +59,4 @@ if budget>0:
           git add app_original.py
           git diff --cached --quiet || git commit -m 'Corrige orçamento ao esvaziar lista e permite ajuste'
           git push
+# trigger
