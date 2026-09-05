@@ -1,15 +1,13 @@
 from pathlib import Path
 import re
 
-# Executa a versão original, aplicando correções e uma camada de análise profissional.
+# Camada de correções e regras de negócio sobre a versão principal do aplicativo.
 _original = Path(__file__).with_name("app_original.py")
 _source = _original.read_text(encoding="utf-8")
 
-# Recalcula TODOS os indicadores dos produtos a partir do histórico atual.
-_old_rebuild = re.search(r"def rebuild_product_stats\(.*?\ndef find_product", _source, flags=re.S)
-if not _old_rebuild:
-    raise RuntimeError("Não foi possível localizar rebuild_product_stats para aplicar a correção.")
-_new_rebuild = '''def rebuild_product_stats(products):
+# 1) Indicadores dos produtos sempre refletem o histórico atual.
+_old = re.search(r"def rebuild_product_stats\(.*?\ndef find_product", _source, flags=re.S)
+_new = '''def rebuild_product_stats(products):
     items=db("itens_compra",params={"select":"produto_id,compra_id,preco_unitario,quantidade,criado_em"}); grouped={}
     for x in items:
         if x.get("produto_id") is not None: grouped.setdefault(str(x["produto_id"]),[]).append(x)
@@ -17,51 +15,175 @@ _new_rebuild = '''def rebuild_product_stats(products):
     for p in products:
         rows=grouped.get(str(p.get("id")),[])
         if not rows:
-            db("produtos","PATCH",params={"id":f"eq.{p['id']}"},data={"ultimo_preco":0,"preco_medio":0,"menor_preco":0,"maior_preco":0,"ultima_quantidade":1,"quantidade_compras":0,"atualizado_em":now()})
-            updated+=1
-            continue
+            db("produtos","PATCH",params={"id":f"eq.{p['id']}"},data={"ultimo_preco":0,"preco_medio":0,"menor_preco":0,"maior_preco":0,"ultima_quantidade":1,"quantidade_compras":0,"atualizado_em":now()}); updated+=1; continue
         valid=[x for x in rows if num(x.get("preco_unitario"))>0]; prices=[num(x.get("preco_unitario")) for x in valid]; latest=sorted(rows,key=lambda x:str(x.get("criado_em","")))[-1]
         db("produtos","PATCH",params={"id":f"eq.{p['id']}"},data={"ultimo_preco":num(latest.get("preco_unitario")),"preco_medio":sum(prices)/len(prices) if prices else 0,"menor_preco":min(prices) if prices else 0,"maior_preco":max(prices) if prices else 0,"ultima_quantidade":num(latest.get("quantidade")) or 1,"quantidade_compras":len({str(x.get("compra_id")) for x in rows}),"atualizado_em":now()}); updated+=1
     clear(); return updated
 def find_product'''
-_source = _source[:_old_rebuild.start()] + _new_rebuild + _source[_old_rebuild.end():]
+if not _old: raise RuntimeError("rebuild_product_stats não encontrado")
+_source=_source[:_old.start()]+_new+_source[_old.end():]
 
-_old_delete = re.search(r"def delete_history_purchase\(pid\):.*?\ndef parse_history", _source, flags=re.S)
-if not _old_delete:
-    raise RuntimeError("Não foi possível localizar delete_history_purchase para aplicar a correção.")
-_new_delete = '''def delete_history_purchase(pid):
+# 2) Ao excluir histórico, reconstruir os indicadores imediatamente.
+_old=re.search(r"def delete_history_purchase\(pid\):.*?\ndef parse_history",_source,flags=re.S)
+_new='''def delete_history_purchase(pid):
     db("itens_compra","DELETE",params={"compra_id":f"eq.{pid}"}); db("compras","DELETE",params={"id":f"eq.{pid}"}); rebuild_product_stats(get_products()); clear()
 def parse_history'''
-_source = _source[:_old_delete.start()] + _new_delete + _source[_old_delete.end():]
+if not _old: raise RuntimeError("delete_history_purchase não encontrado")
+_source=_source[:_old.start()]+_new+_source[_old.end():]
 
-_old_stage = '''def stage_history(uploaded,products):\n    rows=parse_history(uploaded); exact=[]; unmatched=[]\n'''
-_new_stage = '''def stage_history(uploaded,products):\n    for k in list(st.session_state.keys()):\n        if str(k).startswith(("hist_action_","hist_dest_","hist_cat_","hist_unit_")):\n            st.session_state.pop(k,None)\n    rows=parse_history(uploaded); exact=[]; unmatched=[]\n'''
-if _old_stage not in _source:
-    raise RuntimeError("Não foi possível localizar stage_history para aplicar a correção.")
-_source = _source.replace(_old_stage, _new_stage, 1)
+# 3) Nova carga de histórico nunca herda decisões antigas do Streamlit.
+_old='''def stage_history(uploaded,products):\n    rows=parse_history(uploaded); exact=[]; unmatched=[]\n'''
+_new='''def stage_history(uploaded,products):
+    for k in list(st.session_state.keys()):
+        if str(k).startswith(("hist_action_","hist_dest_","hist_cat_","hist_unit_")): st.session_state.pop(k,None)
+    rows=parse_history(uploaded); exact=[]; unmatched=[]
+'''
+if _old not in _source: raise RuntimeError("stage_history não encontrado")
+_source=_source.replace(_old,_new,1)
 
-_old_pending = '''    st.session_state["pending_history"]={"exact":exact,"unmatched":unmatched}\n'''
-_new_pending = '''    st.session_state["pending_history"]={\n        "exact":exact,\n        "unmatched":unmatched,\n        "source_count":len(rows),\n        "consolidated_count":len(exact)+len(unmatched),\n    }\n'''
-if _old_pending not in _source:
-    raise RuntimeError("Não foi possível localizar pending_history para aplicar a correção.")
-_source = _source.replace(_old_pending, _new_pending, 1)
+_old='''    st.session_state["pending_history"]={"exact":exact,"unmatched":unmatched}\n'''
+_new='''    st.session_state["pending_history"]={"exact":exact,"unmatched":unmatched,"source_count":len(rows),"consolidated_count":len(exact)+len(unmatched)}
+'''
+if _old not in _source: raise RuntimeError("pending_history não encontrado")
+_source=_source.replace(_old,_new,1)
 
-_old_info = '''    st.write("Foram encontrados itens que não estão cadastrados. Você pode decidir item a item ou aplicar uma decisão geral.")\n'''
-_new_info = '''    source_count=pending.get("source_count",len(pending.get("exact",[]))+len(pending.get("unmatched",[])))\n    consolidated_count=pending.get("consolidated_count",len(pending.get("exact",[]))+len(pending.get("unmatched",[])))\n    st.info(f"Carga: {source_count} linhas do Excel → {consolidated_count} itens após consolidação. Nenhum item é descartado automaticamente.")\n    st.write("Foram encontrados itens que não estão cadastrados. Você pode decidir item a item ou aplicar uma decisão geral.")\n'''
-if _old_info not in _source:
-    raise RuntimeError("Não foi possível localizar o texto da revisão.")
-_source = _source.replace(_old_info, _new_info, 1)
+_old='''    st.write("Foram encontrados itens que não estão cadastrados. Você pode decidir item a item ou aplicar uma decisão geral.")\n'''
+_new='''    source_count=pending.get("source_count",len(pending.get("exact",[]))+len(pending.get("unmatched",[])))
+    consolidated_count=pending.get("consolidated_count",len(pending.get("exact",[]))+len(pending.get("unmatched",[])))
+    st.info(f"Carga: {source_count} linhas do Excel → {consolidated_count} itens após consolidação. Nenhum item é descartado automaticamente.")
+    st.write("Foram encontrados itens que não estão cadastrados. Você pode decidir item a item ou aplicar uma decisão geral.")
+'''
+if _old not in _source: raise RuntimeError("texto da revisão não encontrado")
+_source=_source.replace(_old,_new,1)
 
-_old_success = '''            n,total,created,ignored=commit_history(pending,ga); st.success(f"{n} itens importados. {created} produto(s) novo(s). {ignored} item(ns) ignorado(s). Total: {money(total)}"); st.rerun()\n'''
-_new_success = '''            n,total,created,ignored=commit_history(pending,ga)\n            origem=pending.get("source_count",n)\n            consolidados=pending.get("consolidated_count",n)\n            st.success(f"{origem} linhas lidas → {consolidados} itens após consolidação → {n} importados. {created} produto(s) novo(s). {ignored} item(ns) ignorado(s). Total: {money(total)}")\n            st.rerun()\n'''
-if _old_success not in _source:
-    raise RuntimeError("Não foi possível localizar a mensagem final da importação.")
-_source = _source.replace(_old_success, _new_success, 1)
+# 4) Fechamento: registra a compra e zera o orçamento da compra encerrada.
+_old=re.search(r"def finish\(items,budget\):.*?\ndef delete_history_purchase",_source,flags=re.S)
+_new='''def finish(items,budget):
+    if num(budget)<=0: raise RuntimeError("Informe o orçamento da compra antes de finalizar.")
+    est=sum(num(x.get("quantidade"))*num(x.get("preco_estimado")) for x in items); real=sum(num(x.get("quantidade"))*num(x.get("preco_unitario")) for x in items if x.get("confirmado"))
+    c=db("compras","POST",data={"orcamento":num(budget),"valor_estimado":est,"valor_real":real,"saldo":num(budget)-real,"quantidade_itens":len(items),"data_compra":now()})[0]; rows=[]
+    for x in items:
+        q=num(x.get("quantidade")); e=num(x.get("preco_estimado")); p=num(x.get("preco_unitario")); pid=create_product(x["nome_produto"],x.get("categoria","Mercearia"),x.get("unidade","un."),p or e,q)
+        rows.append({"compra_id":c["id"],"produto_id":pid,"nome_produto":x["nome_produto"],"quantidade":q,"unidade":x["unidade"],"preco_estimado":e,"preco_unitario":p,"valor_total":q*p,"ultimo_preco":e,"variacao_preco":p-e,"confirmado":bool(x.get("confirmado"))})
+    if rows: db("itens_compra","POST",data=rows); [product_stats(pid) for pid in {x["produto_id"] for x in rows}]
+    db("lista_atual","DELETE",params={"id":"gt.0"});
+    # A compra foi encerrada: o orçamento pertence ao histórico e não à próxima compra.
+    save_budget(0); clear()
+def delete_history_purchase'''
+if not _old: raise RuntimeError("finish não encontrado")
+_source=_source[:_old.start()]+_new+_source[_old.end():]
 
-_old_ana = re.search(r'with ana:\n    st\.subheader\("Análises"\).*?(?=with config:)', _source, flags=re.S)
-if not _old_ana:
-    raise RuntimeError("Não foi possível localizar a aba Análises.")
-_new_ana = '''with ana:
+# 5) Orçamento é solicitado somente ao iniciar uma nova compra.
+_insert='''@st.dialog("Definir orçamento da compra")
+def budget_dialog(action):
+    st.markdown("### Nova compra")
+    st.caption("Informe quanto você pretende gastar. Esse valor ficará vinculado à compra até ela ser finalizada.")
+    value=st.number_input("Orçamento disponível",min_value=0.01,value=100.00,step=10.00,format="%.2f",key="new_purchase_budget")
+    a,b=st.columns(2)
+    if a.button("Cancelar",use_container_width=True): st.rerun()
+    if b.button("Iniciar compra",type="primary",use_container_width=True):
+        save_budget(value)
+        if action=="add":
+            st.session_state["open_add_after_budget"]=True
+        else:
+            st.session_state["open_standard_after_budget"]=True
+        st.rerun()
+
+'''
+marker='@st.dialog("Adicionar produto à lista de compras")\ndef add_list_dialog'
+if marker not in _source: raise RuntimeError("add_list_dialog não encontrado")
+_source=_source.replace(marker,_insert+marker,1)
+
+# 6) Ações de início da compra: se a lista estiver vazia, primeiro pedir orçamento.
+_old='''    with a:
+        if st.button("Adicionar produto à lista de compras",type="primary",use_container_width=True,key="open_add_list"): add_list_dialog(products)
+    with b:
+        if st.button("Importar lista padrão",use_container_width=True,key="import_standard"):
+            try:
+                rec={}; qs={}
+'''
+_new='''    with a:
+        if st.button("Adicionar produto à lista de compras",type="primary",use_container_width=True,key="open_add_list"):
+            if not current and budget<=0: budget_dialog("add")
+            else: add_list_dialog(products)
+    with b:
+        if st.button("Importar lista padrão",use_container_width=True,key="import_standard"):
+            if not current and budget<=0:
+                budget_dialog("standard")
+            else:
+                try:
+                    rec={}; qs={}
+'''
+if _old not in _source: raise RuntimeError("botões de início não encontrados")
+_source=_source.replace(_old,_new,1)
+
+# Ajuste da indentação do bloco original de importação padrão para o novo else.
+_source=_source.replace('''                by={norm(p.get("nome")):p for p in products}; added=0
+                for k,cnt in rec.items():
+                    if cnt>=2 and k in by and not any(norm(x.get("nome_produto"))==k for x in current): p=by[k]; add_item(p["nome"],p.get("categoria","Mercearia"),p.get("unidade","un."),round(sum(qs[k])/len(qs[k]),2),num(p.get("ultimo_preco"))); added+=1
+                st.success(f"{added} produtos recorrentes adicionados."); st.rerun()
+            except Exception as e: st.error(f"Erro: {e}")
+''','''                    by={norm(p.get("nome")):p for p in products}; added=0
+                    for k,cnt in rec.items():
+                        if cnt>=2 and k in by and not any(norm(x.get("nome_produto"))==k for x in current): p=by[k]; add_item(p["nome"],p.get("categoria","Mercearia"),p.get("unidade","un."),round(sum(qs[k])/len(qs[k]),2),num(p.get("ultimo_preco"))); added+=1
+                    st.success(f"{added} produtos recorrentes adicionados."); st.rerun()
+                except Exception as e: st.error(f"Erro: {e}")
+''',1)
+
+# 7) Depois de definir o orçamento, abrir automaticamente o fluxo solicitado.
+_anchor='''    if not current: st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong></div>',unsafe_allow_html=True)
+'''
+_follow='''    if st.session_state.pop("open_add_after_budget",False): add_list_dialog(products)
+    if st.session_state.pop("open_standard_after_budget",False):
+        # O rerun já traz o orçamento salvo; executar a mesma rotina da lista padrão.
+        rec={}; qs={}
+        for p in history:
+            seen=set()
+            for x in db("itens_compra",params={"select":"nome_produto,quantidade","compra_id":f"eq.{p['id']}"}):
+                k=norm(x.get("nome_produto"));
+                if k and k not in seen: seen.add(k); rec[k]=rec.get(k,0)+1; qs.setdefault(k,[]).append(num(x.get("quantidade")))
+        by={norm(p.get("nome")):p for p in products}; added=0
+        for k,cnt in rec.items():
+            if cnt>=2 and k in by and not any(norm(x.get("nome_produto"))==k for x in current):
+                p=by[k]; add_item(p["nome"],p.get("categoria","Mercearia"),p.get("unidade","un."),round(sum(qs[k])/len(qs[k]),2),num(p.get("ultimo_preco"))); added+=1
+        if added: st.success(f"{added} produtos recorrentes adicionados."); st.rerun()
+    if not current: st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong><br>Ao iniciar uma nova compra, o sistema solicitará o orçamento antes do primeiro item.</div>',unsafe_allow_html=True)
+'''
+if _anchor not in _source: raise RuntimeError("estado vazio não encontrado")
+_source=_source.replace(_anchor,_follow,1)
+
+# 8) Remover o antigo bloco de Fechamento/Orçamento da tela principal.
+_old=re.search(r'    st\.divider\(\); st\.markdown\("### Fechamento"\).*?\nwith prod:',_source,flags=re.S)
+_new='\nwith prod:'
+if not _old: raise RuntimeError("bloco Fechamento não encontrado")
+_source=_source[:_old.start()]+_new+_source[_old.end():]
+
+# 9) Finalizar só com orçamento definido e com itens confirmados.
+_source=_source.replace('''    if b.button("Finalizar e salvar compra",type="primary",disabled=not bool(current),use_container_width=True):
+        try: finish(current,budget); st.rerun()
+        except Exception as e: st.error(f"Erro ao finalizar: {e}")
+''','',1)
+# Inserir finalização após a lista de itens, antes do tab Produtos.
+marker='''with prod:
+'''
+button='''    if current:
+        st.divider()
+        f1,f2=st.columns([2,1])
+        with f1:
+            st.caption(f"Compra em andamento · Orçamento: {money(budget)} · Confirmado: {done}/{len(current)} itens")
+        with f2:
+            if st.button("Finalizar compra",type="primary",disabled=(budget<=0 or done==0),use_container_width=True,key="finish_purchase"):
+                try: finish(current,budget); st.success("Compra finalizada e registrada no histórico."); st.rerun()
+                except Exception as e: st.error(f"Erro ao finalizar: {e}")
+
+with prod:
+'''
+if marker not in _source: raise RuntimeError("tab Produtos não encontrado")
+_source=_source.replace(marker,button,1)
+
+# 10) Análises profissionais.
+_old=re.search(r'with ana:\n    st\.subheader\("Análises"\).*?(?=with config:)',_source,flags=re.S)
+_new='''with ana:
     st.subheader("Análises")
     st.caption("Visão gerencial das compras, gastos, preços e principais desvios.")
     if history:
@@ -69,85 +191,46 @@ _new_ana = '''with ana:
         for hp in history:
             for xi in db("itens_compra",params={"select":"*","compra_id":f"eq.{hp['id']}"}):
                 all_items.append({**xi,"data_compra":hp.get("data_compra"),"categoria":next((pp.get("categoria","Sem categoria") for pp in products if str(pp.get("id"))==str(xi.get("produto_id"))),"Sem categoria")})
-        total_real=sum(num(x.get("valor_total")) for x in all_items)
-        total_est=sum(num(x.get("preco_estimado"))*num(x.get("quantidade")) for x in all_items)
-        economia=total_est-total_real
-        qtd_itens=sum(num(x.get("quantidade")) for x in all_items)
-        ticket=total_real/len(history) if history else 0
-        compras_com_desvio=sum(1 for hp in history if num(hp.get("valor_estimado"))>0 and num(hp.get("valor_real"))>num(hp.get("valor_estimado")))
-        price_rows=[]
-        for x in all_items:
-            old=num(x.get("ultimo_preco")); new=num(x.get("preco_unitario")); q=num(x.get("quantidade"))
-            if old>0 and new>0:
-                price_rows.append({"Produto":x.get("nome_produto"),"Último preço":old,"Preço pago":new,"Variação":new-old,"Variação %":(new-old)/old,"Qtd":q})
-        aumentos=sum(1 for x in price_rows if x["Variação"]>0.0001)
-        reducoes=sum(1 for x in price_rows if x["Variação"]<-0.0001)
-        estaveis=len(price_rows)-aumentos-reducoes
-
+        total_real=sum(num(x.get("valor_total")) for x in all_items); total_est=sum(num(x.get("preco_estimado"))*num(x.get("quantidade")) for x in all_items); economia=total_est-total_real; qtd_itens=sum(num(x.get("quantidade")) for x in all_items); ticket=total_real/len(history)
+        variacoes=[num(x.get("variacao_preco")) for x in all_items if num(x.get("preco_unitario"))>0 and num(x.get("ultimo_preco"))>0]; aumentos=sum(v>0.0001 for v in variacoes); reducoes=sum(v<-0.0001 for v in variacoes); estaveis=len(variacoes)-aumentos-reducoes
         st.markdown("### Visão geral")
-        k1,k2,k3,k4,k5=st.columns(5)
-        k1.metric("Gasto acumulado",money(total_real))
-        k2.metric("Compras realizadas",f"{len(history)}")
-        k3.metric("Itens comprados",f"{qtd_itens:g}")
-        k4.metric("Ticket médio",money(ticket))
-        k5.metric("Economia vs. estimativa",money(economia),delta=("economia" if economia>=0 else "acima da estimativa"),delta_color=("normal" if economia>=0 else "inverse"))
-
-        if economia>=0:
-            texto=f"**Leitura rápida:** o gasto realizado está {money(economia)} abaixo da estimativa histórica. Isso representa {economia/total_est:.1%} de economia sobre o valor estimado." if total_est else "**Leitura rápida:** não há base de estimativa suficiente para calcular a economia percentual."
-            st.success(texto)
-        else:
-            st.warning(f"**Leitura rápida:** o gasto realizado ficou {money(abs(economia))} acima da estimativa histórica.")
-
+        k1,k2,k3,k4,k5=st.columns(5); k1.metric("Gasto acumulado",money(total_real)); k2.metric("Compras realizadas",len(history)); k3.metric("Itens comprados",f"{qtd_itens:g}"); k4.metric("Ticket médio",money(ticket)); k5.metric("Economia vs. estimativa",money(economia))
+        if economia>=0: st.success(f"**Leitura rápida:** gasto realizado {money(economia)} abaixo da estimativa." if total_est else "**Leitura rápida:** não há estimativa suficiente para calcular a economia.")
+        else: st.warning(f"**Leitura rápida:** gasto realizado {money(abs(economia))} acima da estimativa.")
         t1,t2,t3=st.tabs(["Desempenho financeiro","Onde está o gasto","Preços e oportunidades"])
         with t1:
-            st.markdown("#### Comparativo por compra")
-            comp_df=pd.DataFrame([{"Compra":f"Compra {i+1}","Estimado":num(hp.get("valor_estimado")),"Real":num(hp.get("valor_real"))} for i,hp in enumerate(history)])
-            st.bar_chart(comp_df.set_index("Compra"),use_container_width=True)
-            resumo_df=pd.DataFrame([{"Data":str(hp.get("data_compra",""))[:16].replace("T"," "),"Estimado":money(hp.get("valor_estimado")),"Real":money(hp.get("valor_real")),"Economia":money(num(hp.get("valor_estimado"))-num(hp.get("valor_real"))),"Itens":int(num(hp.get("quantidade_itens")))} for hp in history])
-            st.dataframe(resumo_df,use_container_width=True,hide_index=True)
-            c1,c2,c3=st.columns(3)
-            c1.metric("Compras acima da estimativa",f"{compras_com_desvio} de {len(history)}")
-            c2.metric("Maior compra",money(max((num(hp.get("valor_real")) for hp in history),default=0)))
-            c3.metric("Estimativa total",money(total_est))
-
+            st.markdown("#### Estimado × realizado por compra")
+            comp_df=pd.DataFrame([{"Compra":f"Compra {i+1}","Estimado":num(hp.get("valor_estimado")),"Real":num(hp.get("valor_real"))} for i,hp in enumerate(history)]); st.bar_chart(comp_df.set_index("Compra"),use_container_width=True)
+            resumo=pd.DataFrame([{"Data":str(hp.get("data_compra",""))[:16].replace("T"," "),"Orçamento":money(hp.get("orcamento")),"Estimado":money(hp.get("valor_estimado")),"Real":money(hp.get("valor_real")),"Saldo":money(hp.get("saldo")),"Itens":int(num(hp.get("quantidade_itens")))} for hp in history]); st.dataframe(resumo,use_container_width=True,hide_index=True)
         with t2:
-            st.markdown("#### Distribuição do gasto por categoria")
             cat={}
             for x in all_items: cat[x["categoria"]]=cat.get(x["categoria"],0)+num(x.get("valor_total"))
             cat_df=pd.DataFrame(sorted(cat.items(),key=lambda z:z[1],reverse=True),columns=["Categoria","Gasto"])
-            if not cat_df.empty:
-                st.bar_chart(cat_df.set_index("Categoria"),use_container_width=True)
-                cat_view=cat_df.copy(); cat_view["Participação"]=(cat_view["Gasto"]/total_real).map(lambda v:f"{v:.1%}" if total_real else "0,0%"); cat_view["Gasto"]=cat_view["Gasto"].map(money)
-                st.dataframe(cat_view.rename(columns={"Gasto":"Valor gasto"}),use_container_width=True,hide_index=True)
-            st.markdown("#### Top 10 produtos por impacto financeiro")
-            prod={}
-            for x in all_items:
-                n=x.get("nome_produto","Produto"); prod[n]=prod.get(n,0)+num(x.get("valor_total"))
-            top_df=pd.DataFrame(sorted(prod.items(),key=lambda z:z[1],reverse=True)[:10],columns=["Produto","Gasto"])
-            if not top_df.empty:
-                st.bar_chart(top_df.set_index("Produto"),use_container_width=True)
-                top_view=top_df.copy(); top_view["Participação"]=(top_view["Gasto"]/total_real).map(lambda v:f"{v:.1%}" if total_real else "0,0%"); top_view["Gasto"]=top_view["Gasto"].map(money)
-                st.dataframe(top_view.rename(columns={"Gasto":"Valor gasto"}),use_container_width=True,hide_index=True)
-
+            if not cat_df.empty: st.markdown("#### Gasto por categoria"); st.bar_chart(cat_df.set_index("Categoria"),use_container_width=True)
+            prodg={}
+            for x in all_items: prodg[x.get("nome_produto","Produto")]=prodg.get(x.get("nome_produto","Produto"),0)+num(x.get("valor_total"))
+            top=pd.DataFrame(sorted(prodg.items(),key=lambda z:z[1],reverse=True)[:10],columns=["Produto","Gasto"])
+            if not top.empty: st.markdown("#### Top 10 produtos por impacto financeiro"); st.bar_chart(top.set_index("Produto"),use_container_width=True)
         with t3:
-            st.markdown("#### Monitoramento de preços")
-            p1,p2,p3,p4=st.columns(4)
-            p1.metric("Aumentos",f"{aumentos}")
-            p2.metric("Reduções",f"{reducoes}")
-            p3.metric("Estáveis",f"{estaveis}")
-            p4.metric("Comparações",f"{len(price_rows)}")
-            if price_rows:
-                delta_total=sum(x["Variação"]*x["Qtd"] for x in price_rows)
-                if delta_total>0: st.warning(f"Pressão de preços identificada: **{money(delta_total)}** acima dos últimos preços registrados, considerando as quantidades compradas.")
-                elif delta_total<0: st.success(f"Redução potencial identificada: **{money(abs(delta_total))}** frente aos últimos preços registrados, considerando as quantidades compradas.")
-                pv=pd.DataFrame(price_rows).sort_values("Variação %",ascending=False)
-                pv["Último preço"]=pv["Último preço"].map(money); pv["Preço pago"]=pv["Preço pago"].map(money); pv["Variação"]=pv["Variação"].map(money); pv["Variação %"]=pv["Variação %"].map(lambda v:f"{v:+.1%}")
-                st.dataframe(pv,use_container_width=True,hide_index=True)
-            else:
-                st.info("Ainda não existem comparações suficientes de preços para gerar oportunidades de análise.")
-    else:
-        st.markdown('<div class="empty"><strong>Nenhum dado histórico disponível.</strong><br>Finalize uma compra ou importe um histórico para liberar os indicadores gerenciais.</div>',unsafe_allow_html=True)
+            p1,p2,p3,p4=st.columns(4); p1.metric("Preços aumentaram",aumentos); p2.metric("Preços reduziram",reducoes); p3.metric("Sem alteração",estaveis); p4.metric("Com comparação",len(variacoes))
+            price_rows=[]
+            for x in all_items:
+                old=num(x.get("ultimo_preco")); new=num(x.get("preco_unitario")); q=num(x.get("quantidade"))
+                if old>0 and new>0: price_rows.append({"Produto":x.get("nome_produto"),"Último preço":money(old),"Preço pago":money(new),"Variação":money(new-old),"Variação %":f"{(new-old)/old:+.1%}","Qtd":q})
+            if price_rows: st.dataframe(pd.DataFrame(price_rows).sort_values("Variação %",ascending=False),use_container_width=True,hide_index=True)
+            else: st.info("Ainda não existem comparações suficientes de preços.")
+    else: st.markdown('<div class="empty"><strong>Nenhum dado histórico disponível.</strong><br>Finalize uma compra para liberar os indicadores gerenciais.</div>',unsafe_allow_html=True)
 '''
-_source = _source[:_old_ana.start()] + _new_ana + _source[_old_ana.end():]
+if not _old: raise RuntimeError("aba Análises não encontrada")
+_source=_source[:_old.start()]+_new+_source[_old.end():]
 
-exec(compile(_source, str(_original), "exec"), globals(), globals())
+# 11) Mensagem final da importação informa a cadeia completa da carga.
+_old='''            n,total,created,ignored=commit_history(pending,ga); st.success(f"{n} itens importados. {created} produto(s) novo(s). {ignored} item(ns) ignorado(s). Total: {money(total)}"); st.rerun()\n'''
+_new='''            n,total,created,ignored=commit_history(pending,ga)
+            origem=pending.get("source_count",n); consolidados=pending.get("consolidated_count",n)
+            st.success(f"{origem} linhas lidas → {consolidados} itens após consolidação → {n} importados. {created} produto(s) novo(s). {ignored} item(ns) ignorado(s). Total: {money(total)}")
+            st.rerun()
+'''
+if _old in _source: _source=_source.replace(_old,_new,1)
+
+exec(compile(_source,str(_original),"exec"),globals(),globals())
