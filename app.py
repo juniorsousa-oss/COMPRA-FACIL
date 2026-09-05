@@ -96,10 +96,27 @@ def parse_history(uploaded):
 
 def stage_history(uploaded,products):
     rows=parse_history(uploaded); exact=[]; unmatched=[]
+    # Itens nao cadastrados repetidos sao consolidados antes das sugestoes.
+    grouped={}
     for x in rows:
         p=find_product(products,x["name"])
-        if p: exact.append({**x,"product":p})
-        else: unmatched.append({**x,"suggestions":suggestions(x["name"],products),"action":"novo","selected":None,"new_category":"Mercearia","new_unit":"un."})
+        if p:
+            exact.append({**x,"product":p})
+            continue
+        key=norm(x["name"])
+        if key not in grouped:
+            grouped[key]={**x,"duplicate_count":1}
+        else:
+            g=grouped[key]
+            old_qty=num(g["qty"]); new_qty=num(x["qty"]); total_qty=old_qty+new_qty
+            if total_qty:
+                g["price"]=(old_qty*num(g["price"])+new_qty*num(x["price"])) / total_qty
+            g["qty"]=total_qty
+            if num(x.get("last"))>0: g["last"]=num(x.get("last"))
+            g["duplicate_count"]=g.get("duplicate_count",1)+1
+    for x in grouped.values():
+        x.update({"suggestions":suggestions(x["name"],products),"action":"novo","selected":None,"new_category":"Mercearia","new_unit":"un."})
+        unmatched.append(x)
     st.session_state["pending_history"]={"exact":exact,"unmatched":unmatched}
 
 def commit_history(pending,action_all=None):
