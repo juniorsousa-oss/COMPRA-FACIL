@@ -1,4 +1,4 @@
-import os, io, re, unicodedata
+import os, io, re, unicodedata, difflib
 from datetime import datetime, timezone
 import pandas as pd
 import requests
@@ -65,14 +65,67 @@ def save_budget(v):
     data={"orcamento":num(v),"atualizado_em":now()}; r=db("estado_app",params={"select":"id","id":"eq.1"})
     db("estado_app","PATCH" if r else "POST",params={"id":"eq.1"} if r else None,data=data if r else {"id":1,**data}); clear()
 
+def product_stats(product_id, latest_price=None, latest_qty=None):
+    items=db("itens_compra",params={"select":"compra_id,preco_unitario,quantidade,criado_em","produto_id":f"eq.{product_id}"})
+    valid=[x for x in items if num(x.get("preco_unitario"))>0]
+    prices=[num(x.get("preco_unitario")) for x in valid]
+    if latest_price is not None and num(latest_price)>0: last=num(latest_price)
+    elif valid: last=num(sorted(valid,key=lambda x:str(x.get("criado_em", "")))[-1].get("preco_unitario"))
+    else: last=0
+    purchases={str(x.get("compra_id")) for x in items if x.get("compra_id") is not None}
+    if latest_qty is not None: qty=num(latest_qty)
+    elif valid:
+        latest_item=sorted(valid,key=lambda x:str(x.get("criado_em", "")))[-1]; qty=num(latest_item.get("quantidade"))
+    else: qty=1
+    db("produtos","PATCH",params={"id":f"eq.{product_id}"},data={"ultimo_preco":last,"preco_medio":sum(prices)/len(prices) if prices else 0,"menor_preco":min(prices) if prices else 0,"maior_preco":max(prices) if prices else 0,"ultima_quantidade":qty or 1,"quantidade_compras":len(purchases),"atualizado_em":now()})
+
+def rebuild_product_stats(products):
+    items=db("itens_compra",params={"select":"produto_id,compra_id,preco_unitario,quantidade,criado_em"})
+    grouped={}
+    for x in items:
+        pid=x.get("produto_id")
+        if pid is None: continue
+        grouped.setdefault(str(pid),[]).append(x)
+    updated=0
+    for p in products:
+        pid=str(p.get("id"))
+        if pid not in grouped: continue
+        rows=grouped[pid]; valid=[x for x in rows if num(x.get("preco_unitario"))>0]; prices=[num(x.get("preco_unitario")) for x in valid]; ordered=sorted(rows,key=lambda x:str(x.get("criado_em", ""))); latest=ordered[-1] if ordered else None
+        db("produtos","PATCH",params={"id":f"eq.{p['id']}"},data={"ultimo_preco":num(latest.get("preco_unitario")) if latest else 0,"preco_medio":sum(prices)/len(prices) if prices else 0,"menor_preco":min(prices) if prices else 0,"maior_preco":max(prices) if prices else 0,"ultima_quantidade":num(latest.get("quantidade")) if latest else 1,"quantidade_compras":len({str(x.get("compra_id")) for x in rows if x.get("compra_id") is not None}),"atualizado_em":now()})
+        updated+=1
+    clear(); return updated
+
+def find_product_by_name(products,name):
+    key=norm(name)
+    for p in products:
+        if norm(p.get("nome"))==key: return p
+    return None
+
+def similarity_score(a,b):
+    na,nb=norm(a),norm(b)
+    if not na or not nb: return 0
+    ratio=difflib.SequenceMatcher(None,na,nb).ratio(); ta=set(na.split("_")); tb=set(nb.split("_")); overlap=len(ta&tb)/max(1,len(ta|tb))
+    return max(ratio,0.65*ratio+0.35*overlap)
+
+def similar_products(name,products,limit=3):
+    scored=sorted(((similarity_score(name,p.get("nome","")),p) for p in products if p.get("nome")),key=lambda x:x[0],reverse=True)
+    return [(score,p) for score,p in scored[:limit] if score>=0.42]
+
+def create_or_update_product(name,cat,unit,price,qty,product_id=None):
+    if product_id:
+        product_stats(product_id,latest_price=price,latest_qty=qty); return product_id
+    existing=db("produtos",params={"select":"*","nome":f"ilike.{name.strip()}"})
+    if existing:
+        pid=existing[0]["id"]; product_stats(pid,latest_price=price,latest_qty=qty); return pid
+    row=db("produtos","POST",data={"nome":name.strip(),"categoria":cat or "Mercearia","unidade":unit or "un.","ultimo_preco":num(price),"preco_medio":num(price) if num(price)>0 else 0,"menor_preco":num(price) if num(price)>0 else 0,"maior_preco":num(price) if num(price)>0 else 0,"ultima_quantidade":num(qty) or 1,"quantidade_compras":0,"atualizado_em":now()})[0]
+    return row["id"]
+
 def save_product(name,cat,unit,price=0,qty=1):
-    r=db("produtos",params={"select":"*","nome":f"ilike.{name.strip()}"}); price=num(price); qty=num(qty) or 1
-    payload={"categoria":cat,"unidade":unit or "un.","ultimo_preco":price,"preco_medio":price,"menor_preco":price if price>0 else 0,"maior_preco":price,"ultima_quantidade":qty,"quantidade_compras":1,"atualizado_em":now()}
-    if r:
-        p=r[0]; old=num(p.get("ultimo_preco")); prices=[x for x in(old,price) if x>0]
-        payload.update(preco_medio=sum(prices)/len(prices) if prices else num(p.get("preco_medio")),menor_preco=min(prices) if prices else num(p.get("menor_preco")),maior_preco=max(prices) if prices else num(p.get("maior_preco")),quantidade_compras=int(p.get("quantidade_compras") or 0)+1)
-        db("produtos","PATCH",params={"id":f"eq.{p['id']}"},data=payload); return p["id"]
-    return db("produtos","POST",data={"nome":name.strip(),**payload})[0]["id"]
+    existing=find_product_by_name(get_products(),name)
+    if existing:
+        db("produtos","PATCH",params={"id":f"eq.{existing['id']}"},data={"categoria":cat or existing.get("categoria","Mercearia"),"unidade":unit or existing.get("unidade","un."),"atualizado_em":now()})
+        return existing["id"]
+    return create_or_update_product(name,cat,unit,price,qty)
 
 def finish(items,budget):
     est=sum(num(x.get("quantidade"))*num(x.get("preco_estimado")) for x in items); real=sum(num(x.get("quantidade"))*num(x.get("preco_unitario")) for x in items if x.get("confirmado"))
@@ -80,7 +133,9 @@ def finish(items,budget):
     for x in items:
         q=num(x.get("quantidade")); e=num(x.get("preco_estimado")); p=num(x.get("preco_unitario")); pid=save_product(x["nome_produto"],x.get("categoria","Mercearia"),x.get("unidade","un."),p or e,q)
         rows.append({"compra_id":c["id"],"produto_id":pid,"nome_produto":x["nome_produto"],"quantidade":q,"unidade":x["unidade"],"preco_estimado":e,"preco_unitario":p,"valor_total":q*p,"ultimo_preco":e,"variacao_preco":p-e,"confirmado":bool(x.get("confirmado"))})
-    if rows: db("itens_compra","POST",data=rows)
+    if rows:
+        db("itens_compra","POST",data=rows)
+        for pid in {r["produto_id"] for r in rows}: product_stats(pid)
     db("lista_atual","DELETE",params={"id":"gt.0"}); clear()
 
 def delete_history_purchase(purchase_id):
@@ -162,21 +217,36 @@ def confirm_dialog(item):
 def history_rows():
     rows=[]
     for purchase in get_history():
+        date_text=str(purchase.get("data_compra", ""))[:19].replace("T"," ")
         for x in db("itens_compra",params={"select":"*","compra_id":f"eq.{purchase['id']}","order":"id.asc"}):
-            q=num(x.get("quantidade")); p=num(x.get("preco_unitario")); last=num(x.get("ultimo_preco")); rows.append({"PRODUTO":x.get("nome_produto",""),"VALOR UNITÁRIO":p,"QNT":q,"ÚLTIMO VALOR":last,"VALOR TOTAL":q*p})
+            q=num(x.get("quantidade")); p=num(x.get("preco_unitario")); last=num(x.get("ultimo_preco")); rows.append({"DATA COMPRA":date_text,"PRODUTO":x.get("nome_produto",""),"VALOR UNITÁRIO":p,"QNT":q,"ÚLTIMO VALOR":last,"VALOR TOTAL":q*p})
     return rows
 
-def excel_bytes(df):
-    out=io.BytesIO()
+def history_export_bytes(history):
+    out=io.BytesIO(); summary=[]; details=[]
+    for purchase in history:
+        date_text=str(purchase.get("data_compra", ""))[:19].replace("T"," ")
+        summary.append({"DATA COMPRA":date_text,"ORÇAMENTO":num(purchase.get("orcamento")),"VALOR ESTIMADO":num(purchase.get("valor_estimado")),"VALOR REAL":num(purchase.get("valor_real")),"SALDO":num(purchase.get("saldo")),"QTD. ITENS":int(num(purchase.get("quantidade_itens")))})
+        items=db("itens_compra",params={"select":"*","compra_id":f"eq.{purchase['id']}","order":"id.asc"})
+        for x in items:
+            q=num(x.get("quantidade")); p=num(x.get("preco_unitario")); details.append({"DATA COMPRA":date_text,"PRODUTO":x.get("nome_produto",""),"UNIDADE":x.get("unidade","un."),"QNT":q,"VALOR UNITÁRIO":p,"VALOR TOTAL":q*p,"ÚLTIMO VALOR":num(x.get("ultimo_preco")),"VARIAÇÃO":num(x.get("variacao_preco"))})
     with pd.ExcelWriter(out,engine="openpyxl") as w:
-        df.to_excel(w,index=False,sheet_name="Historico"); ws=w.book["Historico"]; ws.freeze_panes="A2"; ws.auto_filter.ref=ws.dimensions
+        pd.DataFrame(summary,columns=["DATA COMPRA","ORÇAMENTO","VALOR ESTIMADO","VALOR REAL","SALDO","QTD. ITENS"]).to_excel(w,index=False,sheet_name="Compras")
+        pd.DataFrame(details,columns=["DATA COMPRA","PRODUTO","UNIDADE","QNT","VALOR UNITÁRIO","VALOR TOTAL","ÚLTIMO VALOR","VARIAÇÃO"]).to_excel(w,index=False,sheet_name="Itens")
         from openpyxl.styles import Font,PatternFill,Alignment
-        for c in ws[1]: c.font=Font(bold=True,color="FFFFFF"); c.fill=PatternFill("solid",fgColor="2F6F5E"); c.alignment=Alignment(horizontal="center")
-        for col,width in {"A":34,"B":18,"C":12,"D":18,"E":18}.items(): ws.column_dimensions[col].width=width
-        for row in ws.iter_rows(min_row=2): row[1].number_format='R$ #,##0.00'; row[2].number_format='0.00'; row[3].number_format='R$ #,##0.00'; row[4].number_format='R$ #,##0.00'
+        for ws in w.book.worksheets:
+            ws.freeze_panes="A2"; ws.auto_filter.ref=ws.dimensions
+            for c in ws[1]: c.font=Font(bold=True,color="FFFFFF"); c.fill=PatternFill("solid",fgColor="2F6F5E"); c.alignment=Alignment(horizontal="center")
+            for col in ws.columns:
+                letter=col[0].column_letter; ws.column_dimensions[letter].width=min(max(max(len(str(c.value or "")) for c in col)+2,12),32)
+            headers=[str(c.value) for c in ws[1]]
+            for row in ws.iter_rows(min_row=2):
+                for idx,h in enumerate(headers):
+                    if h in {"ORÇAMENTO","VALOR ESTIMADO","VALOR REAL","SALDO","VALOR UNITÁRIO","VALOR TOTAL","ÚLTIMO VALOR","VARIAÇÃO"}: row[idx].number_format='R$ #,##0.00'
+                    elif h=="QNT": row[idx].number_format='0.00'
     out.seek(0); return out.getvalue()
 
-def import_history_excel(uploaded):
+def parse_history_excel(uploaded):
     try: df=pd.read_excel(uploaded,dtype=object)
     except Exception as e: raise RuntimeError(f"Não consegui ler o Excel: {e}")
     if df.empty: raise RuntimeError("A planilha está vazia.")
@@ -189,20 +259,63 @@ def import_history_excel(uploaded):
     if not c_prod or not c_unit or not c_qty: raise RuntimeError("O Excel precisa conter as colunas PRODUTO, VALOR UNITÁRIO e QNT.")
     rows=[]
     for _,r in df.iterrows():
-        name=str(r.get(c_prod,"") or "").strip()
-        if not name: continue
-        q=num(r.get(c_qty)); p=num(r.get(c_unit)); last=num(r.get(c_last)) if c_last else 0
-        if q<=0: continue
-        rows.append({"name":name,"qty":q,"price":p,"last":last})
+        name=str(r.get(c_prod,"") or "").strip(); q=num(r.get(c_qty)); p=num(r.get(c_unit)); last=num(r.get(c_last)) if c_last else 0
+        if name and q>0: rows.append({"name":name,"qty":q,"price":p,"last":last})
     if not rows: raise RuntimeError("Nenhum item válido foi encontrado no Excel.")
-    real=sum(x["qty"]*x["price"] for x in rows); estimated=sum(x["qty"]*(x["last"] if x["last"]>0 else x["price"]) for x in rows)
-    c=db("compras","POST",data={"orcamento":real,"valor_estimado":estimated,"valor_real":real,"saldo":0,"quantidade_itens":len(rows),"data_compra":now()})[0]
-    products=get_products(); item_rows=[]
+    return rows
+
+def stage_history_import(uploaded,products):
+    rows=parse_history_excel(uploaded); exact=[]; unmatched=[]
     for x in rows:
-        existing=next((p for p in products if norm(p.get("nome"))==norm(x["name"])),None); cat=existing.get("categoria","Mercearia") if existing else "Mercearia"; unit=existing.get("unidade","un.") if existing else "un."; previous=x["last"] if x["last"]>0 else (num(existing.get("ultimo_preco")) if existing else 0); pid=save_product(x["name"],cat,unit,x["price"],x["qty"])
+        p=find_product_by_name(products,x["name"])
+        if p: exact.append({**x,"product":p,"action":"vincular"})
+        else: unmatched.append({**x,"suggestions":similar_products(x["name"],products,3),"action":"novo","selected":None})
+    st.session_state["pending_history"]={"rows":rows,"exact":exact,"unmatched":unmatched}
+
+def commit_staged_history(pending):
+    resolved=[{**item,"product":item["product"]} for item in pending["exact"]]
+    products=get_products()
+    for item in pending["unmatched"]:
+        if item.get("action")=="vincular" and item.get("selected"):
+            p=next((p for p in products if str(p.get("id"))==str(item["selected"])),None)
+            if not p: raise RuntimeError(f"Produto selecionado para {item['name']} não foi encontrado.")
+            resolved.append({**item,"product":p})
+        else:
+            resolved.append({**item,"product":None,"new_category":item.get("new_category","Mercearia") or "Mercearia","new_unit":item.get("new_unit","un.") or "un."})
+    real=sum(x["qty"]*x["price"] for x in resolved); estimated=sum(x["qty"]*(x["last"] if x["last"]>0 else x["price"]) for x in resolved)
+    c=db("compras","POST",data={"orcamento":real,"valor_estimado":estimated,"valor_real":real,"saldo":0,"quantidade_itens":len(resolved),"data_compra":now()})[0]; item_rows=[]; created=[]
+    for x in resolved:
+        if x.get("product"):
+            p=x["product"]; pid=p["id"]; unit=p.get("unidade","un."); previous=x["last"] if x["last"]>0 else num(p.get("ultimo_preco"))
+        else:
+            unit=x.get("new_unit","un.") or "un."; pid=create_or_update_product(x["name"],x.get("new_category","Mercearia"),unit,x["price"],x["qty"]); previous=x["last"] if x["last"]>0 else 0; created.append(x["name"])
         item_rows.append({"compra_id":c["id"],"produto_id":pid,"nome_produto":x["name"],"quantidade":x["qty"],"unidade":unit,"preco_estimado":previous,"preco_unitario":x["price"],"valor_total":x["qty"]*x["price"],"ultimo_preco":previous,"variacao_preco":x["price"]-previous,"confirmado":True})
     if item_rows: db("itens_compra","POST",data=item_rows)
-    clear(); return len(rows),real
+    for pid in {x["produto_id"] for x in item_rows}: product_stats(pid)
+    clear(); st.session_state.pop("pending_history",None)
+    return len(resolved),real,len(created)
+
+@st.dialog("Revisar produtos do histórico")
+def history_mapping_dialog(pending):
+    st.write("Alguns itens do Excel não foram encontrados no cadastro. O sistema sugere produtos semelhantes; você pode vincular ou criar um novo produto.")
+    products=get_products(); cats=sorted(set(["Mercearia","Hortifruti","Carnes","Bebidas","Laticínios e ovos","Padaria","Congelados","Limpeza","Higiene pessoal","Casa e utilidades","Pet","Infantil","Saúde e farmácia"]+[p.get("categoria","Mercearia") for p in products]))
+    for idx,item in enumerate(pending["unmatched"]):
+        st.markdown(f"**{item['name']}** — {item['qty']:g} × {money(item['price'])}")
+        sims=item.get("suggestions",[])
+        if sims: st.caption("Sugestões: " + ", ".join(f"{p.get('nome')} ({score:.0%})" for score,p in sims))
+        options=[("novo","Criar novo produto")] + [(str(p["id"]),p["nome"]) for p in products]; labels={k:v for k,v in options}; keys=[k for k,_ in options]; default="novo"
+        if sims and sims[0][0]>=0.62: default=str(sims[0][1]["id"])
+        choice=st.selectbox("Destino",keys,index=keys.index(default) if default in keys else 0,format_func=lambda k:labels[k],key=f"hist_dest_{idx}")
+        item["action"]="novo" if choice=="novo" else "vincular"; item["selected"]=None if choice=="novo" else choice
+        if choice=="novo":
+            c1,c2=st.columns(2); item["new_category"]=c1.selectbox("Categoria",cats,index=cats.index(item.get("new_category","Mercearia")) if item.get("new_category","Mercearia") in cats else 0,key=f"hist_cat_{idx}"); item["new_unit"]=c2.text_input("Unidade",value=item.get("new_unit","un."),key=f"hist_unit_{idx}")
+        st.divider()
+    a,b=st.columns(2)
+    if a.button("Cancelar",use_container_width=True): st.session_state.pop("pending_history",None); st.rerun()
+    if b.button("Confirmar importação",type="primary",use_container_width=True):
+        try:
+            n,total,created=commit_staged_history(pending); st.success(f"{n} itens importados. Total: {money(total)}. {created} produto(s) novo(s) criado(s)."); st.rerun()
+        except Exception as e: st.error(f"Erro ao concluir a importação: {e}")
 
 @st.dialog("Excluir histórico")
 def delete_history_dialog(purchase):
@@ -271,6 +384,10 @@ with prod:
     st.subheader("Produtos")
     if st.button("Adicionar novo produto",type="primary",use_container_width=True,key="open_new_product"): new_product_dialog(products)
     st.info("Importação incremental: produtos já cadastrados são ignorados. Para importar, o Excel precisa conter NOME, CATEGORIA e UNIDADE.")
+    if st.button("Atualizar informações dos produtos pelo histórico",use_container_width=True,key="rebuild_product_stats"):
+        try:
+            updated=rebuild_product_stats(products); st.success(f"Informações atualizadas para {updated} produtos com histórico."); st.rerun()
+        except Exception as e: st.error(f"Erro ao atualizar informações: {e}")
     with st.expander("Importar lista Excel",expanded=False):
         uploaded=st.file_uploader("Escolher arquivo Excel",type=["xlsx","xlsm"],key="excel_products")
         if uploaded is not None:
@@ -285,21 +402,23 @@ with prod:
     else: st.info("Nenhum produto encontrado.")
 
 with hist:
-    st.subheader("Histórico de compras"); st.markdown("### Excel"); st.caption("Padrão: PRODUTO · VALOR UNITÁRIO · QNT · ÚLTIMO VALOR · VALOR TOTAL.")
-    all_rows=history_rows()
-    if all_rows:
-        export_df=pd.DataFrame(all_rows,columns=["PRODUTO","VALOR UNITÁRIO","QNT","ÚLTIMO VALOR","VALOR TOTAL"]); st.download_button("Exportar histórico para Excel",data=excel_bytes(export_df),file_name="historico_compras.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
-    else:
-        template=pd.DataFrame([{"PRODUTO":"Arroz","VALOR UNITÁRIO":16.90,"QNT":1.00,"ÚLTIMO VALOR":0.00,"VALOR TOTAL":16.90}],columns=["PRODUTO","VALOR UNITÁRIO","QNT","ÚLTIMO VALOR","VALOR TOTAL"]); st.download_button("Baixar modelo Excel",data=excel_bytes(template),file_name="modelo_historico_compras.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+    st.subheader("Histórico de compras")
+    st.markdown("### Exportação completa")
+    if history:
+        st.caption("Exporta toda a base histórica registrada, com um resumo das compras e o detalhamento de todos os itens.")
+        st.download_button("Exportar histórico completo para Excel",data=history_export_bytes(history),file_name="historico_completo_compras.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+    else: st.info("Ainda não há histórico para exportar.")
     with st.expander("Importar histórico do Excel",expanded=False):
         st.caption("Informe somente o Excel. Não é necessário informar orçamento nem data: o orçamento será igual ao valor total e a data será registrada automaticamente como data da importação.")
         hist_file=st.file_uploader("Escolher Excel do histórico",type=["xlsx","xlsm"],key="excel_history")
         if hist_file is not None:
             try:
-                preview=pd.read_excel(hist_file,dtype=object); st.dataframe(preview,use_container_width=True,hide_index=True)
-                if st.button("Importar esta compra para o histórico",type="primary",use_container_width=True,key="history_import_confirm"):
-                    n,total=import_history_excel(hist_file); st.success(f"{n} itens importados para o histórico. Total: {money(total)}"); st.rerun()
+                preview=parse_history_excel(hist_file); st.dataframe(pd.DataFrame(preview).rename(columns={"name":"PRODUTO","qty":"QNT","price":"VALOR UNITÁRIO","last":"ÚLTIMO VALOR"}),use_container_width=True,hide_index=True)
+                if st.button("Verificar produtos e continuar",type="primary",use_container_width=True,key="history_import_prepare"):
+                    stage_history_import(hist_file,products); st.rerun()
             except Exception as e: st.error(f"Erro na importação: {e}")
+    pending=st.session_state.get("pending_history")
+    if pending: history_mapping_dialog(pending)
     st.divider()
     if not history: st.markdown('<div class="empty">Nenhuma compra finalizada ainda.</div>',unsafe_allow_html=True)
     for p in history:
