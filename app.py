@@ -132,14 +132,14 @@ _new='''with buy:
 
     with a:
         if st.button("Adicionar produto à lista de compras",type="primary",use_container_width=True,key="open_add_list"):
-            if not current and budget<=0:
+            if not current:
                 budget_dialog("add")
             else:
                 add_list_dialog(products)
 
     with b:
         if st.button("Importar lista padrão",use_container_width=True,key="import_standard"):
-            if not current and budget<=0:
+            if not current:
                 budget_dialog("standard")
             else:
                 try:
