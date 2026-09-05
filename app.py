@@ -107,7 +107,7 @@ _insert='''@st.dialog("Definir orçamento da compra")
 def budget_dialog(action):
     st.markdown("### Nova compra")
     st.caption("Informe quanto você pretende gastar. Esse valor ficará vinculado à compra até ela ser finalizada.")
-    value=st.number_input("Orçamento disponível",min_value=0.01,value=0.01,step=10.00,format="%.2f",key="new_purchase_budget")
+    value=st.number_input("Orçamento disponível (R$)",min_value=0.01,value=0.01,step=10.00,format="%.2f",key="new_purchase_budget")
     a,b=st.columns(2)
     if a.button("Cancelar",use_container_width=True):
         st.rerun()
