@@ -1,0 +1,61 @@
+name: Aplicar consolidacao de duplicados
+on:
+  push:
+    branches: [main]
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch stage_history
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('app.py')
+          text = path.read_text(encoding='utf-8')
+
+          new = '''def stage_history(uploaded,products):
+              rows=parse_history(uploaded); exact=[]; unmatched=[]
+              # Itens nao cadastrados repetidos sao consolidados antes das sugestoes.
+              grouped={}
+              for x in rows:
+                  p=find_product(products,x["name"])
+                  if p:
+                      exact.append({**x,"product":p})
+                      continue
+                  key=norm(x["name"])
+                  if key not in grouped:
+                      grouped[key]={**x,"duplicate_count":1}
+                  else:
+                      g=grouped[key]
+                      old_qty=num(g["qty"]); new_qty=num(x["qty"]); total_qty=old_qty+new_qty
+                      if total_qty:
+                          g["price"]=(old_qty*num(g["price"])+new_qty*num(x["price"])) / total_qty
+                      g["qty"]=total_qty
+                      if num(x.get("last"))>0: g["last"]=num(x.get("last"))
+                      g["duplicate_count"]=g.get("duplicate_count",1)+1
+              for x in grouped.values():
+                  x.update({"suggestions":suggestions(x["name"],products),"action":"novo","selected":None,"new_category":"Mercearia","new_unit":"un."})
+                  unmatched.append(x)
+              st.session_state["pending_history"]={"exact":exact,"unmatched":unmatched}
+
+          '''
+          pattern = r'def stage_history\(uploaded,products\):\n.*?\n(?=def commit_history\()'
+          patched, count = re.subn(pattern, new, text, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit('Nao foi possivel localizar stage_history')
+          path.write_text(patched, encoding='utf-8')
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: consolidar duplicados nao cadastrados no historico'
+          git push
