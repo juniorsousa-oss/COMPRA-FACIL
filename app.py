@@ -5,7 +5,6 @@ _original = Path(__file__).with_name("app_original.py")
 _source = _original.read_text(encoding="utf-8")
 
 # O orçamento de correção deve existir somente dentro da aba Compra.
-# Remove a implementação antiga que ficava entre a criação das abas e o confirm_dialog.
 _source = re.sub(
     r'\n# Ajuste rápido do orçamento da compra em andamento\.\nif budget > 0:.*?(?=\nif st\.session_state\.get\("confirm_item"\):)',
     '\n',
@@ -140,11 +139,17 @@ _new='''with buy:
             if q!=num(item.get("quantidade")) and not ok: edit_item(item["id"],quantidade=q); st.rerun()
         with c2: st.caption("Preço estimado"); st.write(money(item.get("preco_estimado")))
         with c3:
-            if not ok:
-                if st.button("Confirmar",type="primary",key=f"c{item['id']}",use_container_width=True): st.session_state["confirm_item"]=item; st.rerun()
-            else: st.caption("Preço pago"); st.write(money(item.get("preco_unitario")))
-        d1,d2=st.columns([3,1])
-        with d1: st.caption(f"Total pago: {money(num(item.get('quantidade'))*num(item.get('preco_unitario')))}" if ok else "Aguardando confirmação do preço")
+            if ok:
+                st.caption("Preço pago"); st.write(money(item.get("preco_unitario")))
+            else:
+                st.caption("Preço a confirmar")
+        d1,d2,d3=st.columns(3)
+        with d1:
+            if ok:
+                st.button("Confirmado",disabled=True,use_container_width=True,key=f"c_done_{item['id']}")
+            else:
+                if st.button("Confirmar",type="primary",key=f"c{item['id']}",use_container_width=True):
+                    st.session_state["confirm_item"]=item; st.rerun()
         with d2:
             with st.popover("Alterar",use_container_width=True):
                 names=[p.get("nome","") for p in products if p.get("nome")]; current_name=item.get("nome_produto",""); idx=names.index(current_name) if current_name in names else 0
@@ -153,8 +158,10 @@ _new='''with buy:
                 if st.button("Salvar alteração",type="primary",use_container_width=True,key=f"edit_save_{item['id']}"):
                     p=find_product(products,edit_name)
                     if p:
-                        edit_item(item["id"],nome_produto=edit_name,categoria=p.get("categoria","Mercearia"),unidade=p.get("unidade","un."),quantidade=edit_qty,preco_estimado=num(p.get("ultimo_preco")),preco_unitario=0,confirmado=False); st.rerun()
-        if st.button("Excluir",key=f"d{item['id']}",use_container_width=True): remove_item(item["id"]); st.rerun()
+                        edit_item(item["id"],nome_produto=edit_name,categoria=p.get("categoria","Mercearia"),unidade=p.get("un.","un."),quantidade=edit_qty,preco_estimado=num(p.get("ultimo_preco")),preco_unitario=0,confirmado=False); st.rerun()
+        with d3:
+            if st.button("Excluir",key=f"d{item['id']}",use_container_width=True):
+                remove_item(item["id"]); st.rerun()
         st.markdown('</div>',unsafe_allow_html=True)
     if current:
         st.divider(); a,b=st.columns([1,2])
