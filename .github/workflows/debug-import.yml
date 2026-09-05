@@ -1,0 +1,13 @@
+name: Diagnostico importacao
+on:
+  push:
+    branches: [main]
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar Python
+        run: python -m py_compile app.py
