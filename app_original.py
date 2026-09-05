@@ -43,7 +43,13 @@ def get_history(): return db("compras",params={"select":"*","order":"data_compra
 def add_item(name,cat,unit,qty,price):
     db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()}); clear()
 def edit_item(i,**data): data["atualizado_em"]=now(); db("lista_atual","PATCH",params={"id":f"eq.{i}"},data=data); clear()
-def remove_item(i): db("lista_atual","DELETE",params={"id":f"eq.{i}"}); clear()
+def remove_item(i):
+    db("lista_atual","DELETE",params={"id":f"eq.{i}"})
+    remaining = db("lista_atual", params={"select":"id","id":"gt.0","limit":1})
+    if not remaining:
+        save_budget(0)
+    else:
+        clear()
 def save_budget(v):
     data={"orcamento":num(v),"atualizado_em":now()}; r=db("estado_app",params={"select":"id","id":"eq.1"}); db("estado_app","PATCH" if r else "POST",params={"id":"eq.1"} if r else None,data=data if r else {"id":1,**data}); clear()
 def product_stats(pid):
@@ -246,6 +252,27 @@ for col,label,value in zip(cols,["Orçamento","Estimado","Real confirmado","Sald
 if budget>0: st.progress(min(real/budget,1),text=f"Consumo confirmado: {real/budget:.0%}")
 st.caption(f"Lista atual: {done} de {len(current)} itens confirmados")
 buy,prod,hist,ana,config=st.tabs(["🛒 Compra","📦 Produtos","📜 Histórico","📊 Análises","⚙️ Configurações"])
+
+# Ajuste rápido do orçamento da compra em andamento.
+if budget > 0:
+    with st.popover("Corrigir orçamento", use_container_width=False):
+        st.caption("Corrija o valor informado no início da compra.")
+        if "budget_edit_value" not in st.session_state:
+            st.session_state["budget_edit_value"] = budget
+        new_budget = st.number_input(
+            "Novo orçamento (R$)",
+            min_value=0.0,
+            value=float(st.session_state["budget_edit_value"]),
+            step=10.0,
+            format="%.2f",
+            key="budget_edit_value",
+        )
+        if st.button("Salvar novo orçamento", type="primary", use_container_width=True, key="save_budget_edit"):
+            if new_budget <= 0:
+                st.error("Informe um orçamento maior que zero.")
+            else:
+                save_budget(new_budget)
+                st.rerun()
 if st.session_state.get("confirm_item"):
     confirm_dialog(st.session_state["confirm_item"])
 
