@@ -1,0 +1,36 @@
+name: Fix history import
+on:
+  push:
+    branches: [fix-history-import]
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch app
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app.py')
+          s=p.read_text()
+          old='''    if not resolved: st.session_state.pop("pending_history",None); return 0,0,0,ignored\n    real=sum(x["qty"]*x["price"] for x in resolved); estimated=sum(x["qty"]*(x["last"] if x["last"]>0 else (num(x["product"].get("ultimo_preco")) if x.get("product") else x["price"])) for x in resolved)'''
+          new='''    if not resolved: st.session_state.pop("pending_history",None); return 0,0,0,ignored\n    # Nunca descartar itens silenciosamente: todos os itens pendentes devem ter uma decisao explicita.\n    # Se houver item sem acao valida, cadastra como novo para preservar a carga.\n    for x in pending["unmatched"]:\n        if x.get("action") not in ("vincular", "novo", "ignorar"):\n            x["action"]="novo"\n    real=sum(x["qty"]*x["price"] for x in resolved); estimated=sum(x["qty"]*(x["last"] if x["last"]>0 else (num(x["product"].get("ultimo_preco")) if x.get("product") else x["price"])) for x in resolved)'''
+          if old not in s:
+              raise SystemExit('target block not found')
+          s=s.replace(old,new,1)
+          old2='''            x["action"]="novo" if general.startswith("Cadastrar") else ("ignorar" if general.startswith("Ignorar") else "vincular")'''
+          new2='''            x["action"]="novo" if general.startswith("Cadastrar") else ("ignorar" if general.startswith("Ignorar") else "vincular")\n            if x["action"]=="vincular":\n                sims=x.get("suggestions",[])\n                x["selected"]=str(sims[0][1]["id"]) if sims else None\n                if not x["selected"]: x["action"]="novo"'''
+          if old2 not in s:
+              raise SystemExit('target block 2 not found')
+          s=s.replace(old2,new2,1)
+          p.write_text(s)
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app.py
+          git commit -m "Fix history import item handling" || exit 0
+          git push
