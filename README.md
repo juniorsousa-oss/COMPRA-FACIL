@@ -27,3 +27,4 @@ A aplicação usa o projeto Supabase `cuixazpxkvniqldmmnth` como base central. L
 ## Segurança
 
 A versão atual foi preparada para teste compartilhado. Antes de uso corporativo, adicionar autenticação e RLS por usuário/empresa.
+
