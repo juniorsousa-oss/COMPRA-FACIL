@@ -4,7 +4,7 @@ import re
 _original = Path(__file__).with_name("app_original.py")
 _source = _original.read_text(encoding="utf-8")
 
-# Estatísticas: ao excluir histórico, recalcula também produtos que ficaram sem histórico.
+# Corrige estatísticas ao excluir histórico.
 _source = re.sub(r"def delete_history_purchase\(pid\):.*?\ndef parse_history", '''def delete_history_purchase(pid):
     db("itens_compra","DELETE",params={"compra_id":f"eq.{pid}"})
     db("compras","DELETE",params={"id":f"eq.{pid}"})
@@ -12,24 +12,20 @@ _source = re.sub(r"def delete_history_purchase\(pid\):.*?\ndef parse_history", '
     clear()
 def parse_history''', _source, count=1, flags=re.S)
 
-# Limpa decisões antigas antes de uma nova importação de histórico e registra contagens.
-_source = _source.replace(
-'''def stage_history(uploaded,products):
+# Limpa decisões antigas antes de nova importação de histórico.
+_source = _source.replace('''def stage_history(uploaded,products):
     rows=parse_history(uploaded); exact=[]; unmatched=[]
-''',
-'''def stage_history(uploaded,products):
+''','''def stage_history(uploaded,products):
     for k in list(st.session_state.keys()):
         if str(k).startswith(("hist_action_","hist_dest_","hist_cat_","hist_unit_")):
             st.session_state.pop(k,None)
     rows=parse_history(uploaded); exact=[]; unmatched=[]
 ''',1)
-_source = _source.replace(
-'''    st.session_state["pending_history"]={"exact":exact,"unmatched":unmatched}
-''',
-'''    st.session_state["pending_history"]={"exact":exact,"unmatched":unmatched,"source_count":len(rows),"consolidated_count":len(exact)+len(unmatched)}
+_source = _source.replace('''    st.session_state["pending_history"]={"exact":exact,"unmatched":unmatched}
+''','''    st.session_state["pending_history"]={"exact":exact,"unmatched":unmatched,"source_count":len(rows),"consolidated_count":len(exact)+len(unmatched)}
 ''',1)
 
-# Finalização: exige preços confirmados e zera o orçamento depois da compra.
+# Finalização da compra.
 _source = re.sub(r"def finish\(items,budget\):.*?\ndef delete_history_purchase", '''def finish(items,budget):
     if num(budget)<=0: raise RuntimeError("Informe o orçamento da compra antes de finalizar.")
     if not items: raise RuntimeError("Adicione pelo menos um item antes de finalizar.")
@@ -50,7 +46,7 @@ _source = re.sub(r"def finish\(items,budget\):.*?\ndef delete_history_purchase",
     save_budget(0)
 def delete_history_purchase''', _source, count=1, flags=re.S)
 
-# Orçamento inicial.
+# Dialogo para iniciar uma nova compra com orçamento.
 _insert='''@st.dialog("Definir orçamento da compra")
 def budget_dialog(action):
     st.markdown("### Nova compra")
@@ -66,10 +62,16 @@ def budget_dialog(action):
 '''
 _source=_source.replace('@st.dialog("Adicionar produto à lista de compras")\ndef add_list_dialog',_insert+'@st.dialog("Adicionar produto à lista de compras")\ndef add_list_dialog',1)
 
-# Fluxo principal da compra. A alteração do item usa popover, evitando conflito com st.dialog.
+# Fluxo principal da compra. Corrigir orçamento fica DENTRO da aba Compra.
 _old=re.search(r"with buy:\n.*?(?=with prod:\n)",_source,flags=re.S)
 _new='''with buy:
     st.subheader("Lista de compras")
+    if budget>0:
+        with st.popover("Corrigir orçamento",use_container_width=False):
+            st.caption("Corrija o valor informado no início da compra.")
+            new_budget=st.number_input("Novo orçamento (R$)",min_value=0.01,value=float(budget),step=10.0,format="%.2f",key="budget_edit_value")
+            if st.button("Salvar novo orçamento",type="primary",use_container_width=True,key="save_budget_edit"):
+                save_budget(new_budget); st.rerun()
     a,b=st.columns(2)
     with a:
         if not current:
@@ -93,7 +95,8 @@ _new='''with buy:
                     seen=set()
                     for x in db("itens_compra",params={"select":"nome_produto,quantidade","compra_id":f"eq.{hp['id']}"}):
                         k=norm(x.get("nome_produto"))
-                        if k and k not in seen: seen.add(k); rec[k]=rec.get(k,0)+1; qs.setdefault(k,[]).append(num(x.get("quantidade")))
+                        if k and k not in seen:
+                            seen.add(k); rec[k]=rec.get(k,0)+1; qs.setdefault(k,[]).append(num(x.get("quantidade")))
                 by={norm(p.get("nome")):p for p in products}; added=0
                 for k,cnt in rec.items():
                     if cnt>=2 and k in by and not any(norm(x.get("nome_produto"))==k for x in current):
@@ -106,14 +109,16 @@ _new='''with buy:
             seen=set()
             for x in db("itens_compra",params={"select":"nome_produto,quantidade","compra_id":f"eq.{hp['id']}"}):
                 k=norm(x.get("nome_produto"))
-                if k and k not in seen: seen.add(k); rec[k]=rec.get(k,0)+1; qs.setdefault(k,[]).append(num(x.get("quantidade")))
+                if k and k not in seen:
+                    seen.add(k); rec[k]=rec.get(k,0)+1; qs.setdefault(k,[]).append(num(x.get("quantidade")))
         by={norm(p.get("nome")):p for p in products}; added=0
         for k,cnt in rec.items():
             if cnt>=2 and k in by and not any(norm(x.get("nome_produto"))==k for x in current):
                 p=by[k]; add_item(p["nome"],p.get("categoria","Mercearia"),p.get("unidade","un."),round(sum(qs[k])/len(qs[k]),2),num(p.get("ultimo_preco"))); added+=1
         if added: st.success(f"{added} produtos recorrentes adicionados."); st.rerun()
         else: st.info("Não há produtos recorrentes suficientes para montar a lista padrão.")
-    if not current: st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong><br>Ao iniciar uma nova compra, o sistema solicitará o orçamento antes do primeiro item.</div>',unsafe_allow_html=True)
+    if not current:
+        st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong><br>Ao iniciar uma nova compra, o sistema solicitará o orçamento antes do primeiro item.</div>',unsafe_allow_html=True)
     for item in current:
         ok=bool(item.get("confirmado")); total=num(item.get("quantidade"))*num(item.get("preco_estimado"))
         st.markdown('<div class="card">',unsafe_allow_html=True); a,b=st.columns([4,1])
@@ -152,7 +157,7 @@ _new='''with buy:
 if not _old: raise RuntimeError("Bloco da compra não encontrado")
 _source=_source[:_old.start()]+_new+_source[_old.end():]
 
-# Recalcula produtos sem histórico quando necessário.
+# Recalcula produtos que ainda possuem histórico.
 _old=re.search(r"def rebuild_product_stats\(products\):.*?\ndef find_product",_source,flags=re.S)
 if _old:
     _new='''def rebuild_product_stats(products):
