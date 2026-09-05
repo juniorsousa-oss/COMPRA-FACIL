@@ -131,11 +131,18 @@ _new='''with buy:
     a,b=st.columns(2)
 
     with a:
-        if st.button("Adicionar produto à lista de compras",type="primary",use_container_width=True,key="open_add_list"):
-            if not current:
+        if not current:
+            if st.button("Adicionar produto à lista de compras",type="primary",use_container_width=True,key="open_add_list"):
                 budget_dialog("add")
-            else:
-                add_list_dialog(products)
+        else:
+            with st.popover("Adicionar produto à lista de compras",use_container_width=True):
+                names=[p.get("nome","") for p in products if p.get("nome")]
+                selected=st.selectbox("Produto",names,key="add_product_select")
+                qty=st.number_input("Quantidade",min_value=.001,value=1.,step=1.,format="%.2f",key="add_product_qty")
+                p=find_product(products,selected)
+                if st.button("Adicionar à lista",type="primary",use_container_width=True,key="add_product_submit") and p:
+                    add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco")))
+                    st.rerun()
 
     with b:
         if st.button("Importar lista padrão",use_container_width=True,key="import_standard"):
