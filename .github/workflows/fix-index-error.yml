@@ -1,0 +1,36 @@
+name: Corrigir erro de indice
+on:
+  push:
+    branches: [main]
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch importacao
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('app.py')
+          s=p.read_text(encoding='utf-8')
+          # Protecao: a confirmacao deve trabalhar com os itens consolidados
+          # e nunca acessar uma sugestao por indice inexistente.
+          old='''    for x in pending["unmatched"]:\n        action=x.get("action") if action_all is None else action_all\n        if action=="vincular":\n            selected=x.get("selected")\n            if selected is None and x.get("suggestions"):\n                selected=x["suggestions"][0]\n            if selected:\n                resolved.append({**x,"product":selected})\n        elif action=="novo":\n            name=x["name"].strip()\n            p=save_product(name,x.get("new_category","Mercearia"),x.get("new_unit","un."),num(x.get("price")))\n            created+=1\n            resolved.append({**x,"product":p})\n        else:\n            ignored+=1'''
+          new='''    for x in pending["unmatched"]:\n        action=x.get("action") if action_all is None else action_all\n        if action=="vincular":\n            selected=x.get("selected")\n            suggestions_list=x.get("suggestions") or []\n            if selected is None and len(suggestions_list)>0:\n                selected=suggestions_list[0]\n            if selected:\n                resolved.append({**x,"product":selected})\n        elif action=="novo":\n            name=str(x.get("name") or "").strip()\n            if not name:\n                ignored+=1\n                continue\n            p=save_product(name,x.get("new_category","Mercearia"),x.get("new_unit","un."),num(x.get("price")))\n            created+=1\n            resolved.append({**x,"product":p})\n        else:\n            ignored+=1'''
+          if old not in s:
+              raise SystemExit('bloco esperado nao encontrado')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: proteger indice na confirmacao do historico'
+          git push
