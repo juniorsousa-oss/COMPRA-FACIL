@@ -152,18 +152,6 @@ _new='''with buy:
 if not _old: raise RuntimeError("Bloco da compra não encontrado")
 _source=_source[:_old.start()]+_new+_source[_old.end():]
 
-# Correção rápida do orçamento enquanto a compra está em andamento.
-marker='buy,prod,hist,ana,config=st.tabs(["🛒 Compra","📦 Produtos","📜 Histórico","📊 Análises","⚙️ Configurações"])'
-_budget='''buy,prod,hist,ana,config=st.tabs(["🛒 Compra","📦 Produtos","📜 Histórico","📊 Análises","⚙️ Configurações"])
-if budget>0:
-    with st.popover("Corrigir orçamento"):
-        st.caption("Corrija o valor informado no início da compra.")
-        new_budget=st.number_input("Novo orçamento (R$)",min_value=0.01,value=float(budget),step=10.0,format="%.2f",key="budget_edit_value")
-        if st.button("Salvar novo orçamento",type="primary",use_container_width=True,key="save_budget_edit"):
-            save_budget(new_budget); st.rerun()
-'''
-_source=_source.replace(marker,_budget,1)
-
 # Recalcula produtos sem histórico quando necessário.
 _old=re.search(r"def rebuild_product_stats\(products\):.*?\ndef find_product",_source,flags=re.S)
 if _old:
