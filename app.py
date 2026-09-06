@@ -5,18 +5,10 @@ _original = Path(__file__).with_name("app_original.py")
 _source = _original.read_text(encoding="utf-8")
 
 # O orçamento de correção deve existir somente dentro da aba Compra.
-_source = re.sub(
-    r'\n# Ajuste rápido do orçamento da compra em andamento\.\nif budget > 0:.*?(?=\nif st\.session_state\.get\("confirm_item"\):)',
-    '\n',
-    _source,
-    count=1,
-    flags=re.S,
-)
+_source = re.sub(r'\n# Ajuste rápido do orçamento da compra em andamento\.\nif budget > 0:.*?(?=\nif st\.session_state\.get\("confirm_item"\):)', '\n', _source, count=1, flags=re.S)
 
 # Mostra a variação entre o preço informado e o preço estimado durante a confirmação.
-_source = re.sub(
-    r'def confirm_dialog\(item\):.*?\n@st\.dialog\("Excluir histórico"\)',
-    '''def confirm_dialog(item):
+_source = re.sub(r'def confirm_dialog\(item\):.*?\n@st\.dialog\("Excluir histórico"\)', '''def confirm_dialog(item):
     st.markdown(f"### {item['nome_produto']}")
     qty=num(item.get("quantidade")); estimated=num(item.get("preco_estimado"))
     st.caption(f"Quantidade: {qty:g} {item.get('unidade','un.')}")
@@ -24,30 +16,19 @@ _source = re.sub(
     variation=price-estimated
     variation_pct=(variation/estimated*100) if estimated else None
     c1,c2=st.columns(2)
-    with c1:
-        st.metric("Preço estimado",money(estimated))
+    with c1: st.metric("Preço estimado",money(estimated))
     with c2:
-        if variation_pct is None:
-            st.metric("Variação",money(variation))
-        else:
-            st.metric("Variação",money(variation),delta=f"{variation_pct:+.1f}%")
+        st.metric("Variação",money(variation),delta=f"{variation_pct:+.1f}%" if variation_pct is not None else None)
     if estimated:
-        if variation > 0:
-            st.warning(f"Preço {money(variation)} acima do estimado ({variation_pct:+.1f}%).")
-        elif variation < 0:
-            st.success(f"Economia de {money(abs(variation))} ({abs(variation_pct):.1f}%) em relação ao estimado.")
-        else:
-            st.info("Preço igual ao valor estimado.")
+        if variation > 0: st.warning(f"Preço {money(variation)} acima do estimado ({variation_pct:+.1f}%).")
+        elif variation < 0: st.success(f"Economia de {money(abs(variation))} ({abs(variation_pct):.1f}%) em relação ao estimado.")
+        else: st.info("Preço igual ao valor estimado.")
     st.metric("Total do item",money(qty*price))
     a,b=st.columns(2)
     if a.button("Cancelar",use_container_width=True): st.session_state.pop("confirm_item",None); st.rerun()
     if b.button("Confirmar",type="primary",use_container_width=True): edit_item(item["id"],preco_unitario=price,confirmado=True); st.session_state.pop("confirm_item",None); st.rerun()
 
-@st.dialog("Excluir histórico")''',
-    _source,
-    count=1,
-    flags=re.S,
-)
+@st.dialog("Excluir histórico")''', _source, count=1, flags=re.S)
 
 # Corrige estatísticas ao excluir histórico.
 _source = re.sub(r"def delete_history_purchase\(pid\):.*?\ndef parse_history", '''def delete_history_purchase(pid):
@@ -120,8 +101,7 @@ _new='''with buy:
     a,b=st.columns(2)
     with a:
         if not current:
-            if st.button("Adicionar produto à lista de compras",type="primary",use_container_width=True,key="open_add_list"):
-                budget_dialog("add")
+            if st.button("Adicionar produto à lista de compras",type="primary",use_container_width=True,key="open_add_list"): budget_dialog("add")
         else:
             with st.popover("Adicionar produto à lista de compras",use_container_width=True):
                 names=[p.get("nome","") for p in products if p.get("nome")]
@@ -132,16 +112,14 @@ _new='''with buy:
                     add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco"))); st.rerun()
     with b:
         if st.button("Importar lista padrão",use_container_width=True,key="import_standard"):
-            if not current:
-                budget_dialog("standard")
+            if not current: budget_dialog("standard")
             else:
                 rec={}; qs={}
                 for hp in history:
                     seen=set()
                     for x in db("itens_compra",params={"select":"nome_produto,quantidade","compra_id":f"eq.{hp['id']}"}):
                         k=norm(x.get("nome_produto"))
-                        if k and k not in seen:
-                            seen.add(k); rec[k]=rec.get(k,0)+1; qs.setdefault(k,[]).append(num(x.get("quantidade")))
+                        if k and k not in seen: seen.add(k); rec[k]=rec.get(k,0)+1; qs.setdefault(k,[]).append(num(x.get("quantidade")))
                 by={norm(p.get("nome")):p for p in products}; added=0
                 for k,cnt in rec.items():
                     if cnt>=2 and k in by and not any(norm(x.get("nome_produto"))==k for x in current):
@@ -154,16 +132,14 @@ _new='''with buy:
             seen=set()
             for x in db("itens_compra",params={"select":"nome_produto,quantidade","compra_id":f"eq.{hp['id']}"}):
                 k=norm(x.get("nome_produto"))
-                if k and k not in seen:
-                    seen.add(k); rec[k]=rec.get(k,0)+1; qs.setdefault(k,[]).append(num(x.get("quantidade")))
+                if k and k not in seen: seen.add(k); rec[k]=rec.get(k,0)+1; qs.setdefault(k,[]).append(num(x.get("quantidade")))
         by={norm(p.get("nome")):p for p in products}; added=0
         for k,cnt in rec.items():
             if cnt>=2 and k in by and not any(norm(x.get("nome_produto"))==k for x in current):
                 p=by[k]; add_item(p["nome"],p.get("categoria","Mercearia"),p.get("unidade","un."),round(sum(qs[k])/len(qs[k]),2),num(p.get("ultimo_preco"))); added+=1
         if added: st.success(f"{added} produtos recorrentes adicionados."); st.rerun()
         else: st.info("Não há produtos recorrentes suficientes para montar a lista padrão.")
-    if not current:
-        st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong><br>Ao iniciar uma nova compra, o sistema solicitará o orçamento antes do primeiro item.</div>',unsafe_allow_html=True)
+    if not current: st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong><br>Ao iniciar uma nova compra, o sistema solicitará o orçamento antes do primeiro item.</div>',unsafe_allow_html=True)
     for item in current:
         ok=bool(item.get("confirmado")); total=num(item.get("quantidade"))*num(item.get("preco_estimado"))
         st.markdown('<div class="card">',unsafe_allow_html=True); a,b=st.columns([4,1])
@@ -175,29 +151,34 @@ _new='''with buy:
             if q!=num(item.get("quantidade")) and not ok: edit_item(item["id"],quantidade=q); st.rerun()
         with c2: st.caption("Preço estimado"); st.write(money(item.get("preco_estimado")))
         with c3:
-            if ok:
-                st.caption("Preço pago"); st.write(money(item.get("preco_unitario")))
-            else:
-                st.caption("Preço a confirmar")
+            if ok: st.caption("Preço pago"); st.write(money(item.get("preco_unitario")))
+            else: st.caption("Preço a confirmar")
         d1,d2,d3=st.columns(3)
         with d1:
-            if ok:
-                st.button("Confirmado",disabled=True,use_container_width=True,key=f"c_done_{item['id']}")
-            else:
-                if st.button("Confirmar",type="primary",key=f"c{item['id']}",use_container_width=True):
-                    st.session_state["confirm_item"]=item; st.rerun()
+            st.button("Confirmado",disabled=True,use_container_width=True,key=f"c_done_{item['id']}") if ok else None
+            if not ok and st.button("Confirmar",type="primary",key=f"c{item['id']}",use_container_width=True): st.session_state["confirm_item"]=item; st.rerun()
         with d2:
             with st.popover("Alterar",use_container_width=True):
-                names=[p.get("nome","") for p in products if p.get("nome")]; current_name=item.get("nome_produto",""); idx=names.index(current_name) if current_name in names else 0
+                names=[p.get("nome","") for p in products if p.get("nome")]
+                current_name=item.get("nome_produto","")
+                idx=names.index(current_name) if current_name in names else 0
                 edit_name=st.selectbox("Produto",names,index=idx,key=f"edit_product_{item['id']}")
                 edit_qty=st.number_input("Quantidade",min_value=.001,value=num(item.get("quantidade")) or 1.,step=1.,format="%.2f",key=f"edit_qty_{item['id']}")
+                if ok:
+                    edit_price=st.number_input("Preço pago (R$)",min_value=0.,value=num(item.get("preco_unitario")),step=.01,format="%.2f",key=f"edit_price_{item['id']}")
+                    if edit_name!=current_name: st.warning("Ao trocar o produto, o preço será novamente confirmado.")
+                else: edit_price=0.
                 if st.button("Salvar alteração",type="primary",use_container_width=True,key=f"edit_save_{item['id']}"):
                     p=find_product(products,edit_name)
                     if p:
-                        edit_item(item["id"],nome_produto=edit_name,categoria=p.get("categoria","Mercearia"),unidade=p.get("unidade","un."),quantidade=edit_qty,preco_estimado=num(p.get("ultimo_preco")),preco_unitario=0,confirmado=False); st.rerun()
+                        same_product=norm(edit_name)==norm(current_name)
+                        if same_product:
+                            edit_item(item["id"],nome_produto=edit_name,categoria=p.get("categoria","Mercearia"),unidade=p.get("unidade","un."),quantidade=edit_qty,preco_estimado=num(p.get("ultimo_preco")),preco_unitario=edit_price if ok else 0,confirmado=ok)
+                        else:
+                            edit_item(item["id"],nome_produto=edit_name,categoria=p.get("categoria","Mercearia"),unidade=p.get("unidade","un."),quantidade=edit_qty,preco_estimado=num(p.get("ultimo_preco")),preco_unitario=0,confirmado=False)
+                        st.rerun()
         with d3:
-            if st.button("Excluir",key=f"d{item['id']}",use_container_width=True):
-                remove_item(item["id"]); st.rerun()
+            if st.button("Excluir",key=f"d{item['id']}",use_container_width=True): remove_item(item["id"]); st.rerun()
         st.markdown('</div>',unsafe_allow_html=True)
     if current:
         st.divider(); a,b=st.columns([1,2])
