@@ -36,15 +36,10 @@ if _marker not in _source:
     raise RuntimeError("Ponto de injeção dos helpers não encontrado.")
 _source=_source.replace(_marker,_marker+_helpers,1)
 
-# Correção pontual da duplicidade: o 687 carrega o 0074, e o 0074 é quem
-# carrega o app_original. Portanto, a substituição precisa ser inserida
-# dentro do código do 0074, logo após ele ler o app_original.
-_loader_marker='    _source = urllib.request.urlopen(_BASE_URL, timeout=10).read().decode("utf-8")'
-# O texto acima é intencionalmente procurado sem indentação real abaixo.
+# Corrige somente o tratamento de duplicidade no app_original, através do 0074.
 _loader_marker='_source = urllib.request.urlopen(_BASE_URL, timeout=10).read().decode("utf-8")'
 _patch_0074='''
 
-# Tratamento de produto duplicado no app_original.
 _0074_insert_marker = '_source = _original.read_text(encoding="utf-8")'
 _0074_dup_fn = """def add_item(name,cat,unit,qty,price):
     existing=db(\"lista_atual\",params={\"select\":\"id,nome_produto\",\"id\":\"gt.0\"})
@@ -65,6 +60,10 @@ _source = re.sub(r'def add_item\\(name,cat,unit,qty,price\\):\\n    db\\(\"lista
 if _0074_insert_marker not in _source:
     raise RuntimeError("Ponto de leitura do app_original não encontrado.")
 _source=_source.replace(_0074_insert_marker,_0074_insert_marker+_0074_dup_code,1)
+'''
+if _loader_marker not in _source:
+    raise RuntimeError("Ponto de carregamento do 0074 não encontrado.")
+_source=_source.replace(_loader_marker,_loader_marker+_patch_0074,1)
 
 # Fallback do histórico em reruns de dialog/fragment.
 _old_exec='exec(compile(_source, str(Path(__file__)), "exec"))'
