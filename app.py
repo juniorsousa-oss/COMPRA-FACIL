@@ -36,29 +36,35 @@ if _marker not in _source:
     raise RuntimeError("Ponto de injeção dos helpers não encontrado.")
 _source=_source.replace(_marker,_marker+_helpers,1)
 
-# Corrige somente o tratamento de duplicidade. O banco continua com a restrição
-# única; o 409 do Supabase vira aviso visível em vez de traceback.
-_old_new_add='''_new_add = ''' + repr('''def add_item(name,cat,unit,qty,price):
-    existing=db("lista_atual",params={"select":"id,nome_produto","id":"gt.0"})
-    if any(norm(x.get("nome_produto"))==norm(name) for x in existing):
-        raise RuntimeError(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
-    db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()}); clear()''') + ''''''
-_new_new_add='''_new_add = ''' + repr('''def add_item(name,cat,unit,qty,price):
-    existing=db("lista_atual",params={"select":"id,nome_produto","id":"gt.0"})
-    if any(norm(x.get("nome_produto"))==norm(name) for x in existing):
-        st.warning(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
+# Correção pontual da duplicidade: o 687 carrega o 0074, e o 0074 é quem
+# carrega o app_original. Portanto, a substituição precisa ser inserida
+# dentro do código do 0074, logo após ele ler o app_original.
+_loader_marker='    _source = urllib.request.urlopen(_BASE_URL, timeout=10).read().decode("utf-8")'
+# O texto acima é intencionalmente procurado sem indentação real abaixo.
+_loader_marker='_source = urllib.request.urlopen(_BASE_URL, timeout=10).read().decode("utf-8")'
+_patch_0074='''
+
+# Tratamento de produto duplicado no app_original.
+_0074_insert_marker = '_source = _original.read_text(encoding="utf-8")'
+_0074_dup_fn = """def add_item(name,cat,unit,qty,price):
+    existing=db(\"lista_atual\",params={\"select\":\"id,nome_produto\",\"id\":\"gt.0\"})
+    if any(norm(x.get(\"nome_produto\"))==norm(name) for x in existing):
+        st.warning(f\"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.\")
         st.stop()
     try:
-        db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()})
+        db(\"lista_atual\",\"POST\",data={\"nome_produto\":name.strip(),\"categoria\":cat,\"unidade\":unit or \"un.\",\"quantidade\":num(qty),\"preco_estimado\":num(price),\"preco_unitario\":0,\"confirmado\":False,\"atualizado_em\":now()})
     except RuntimeError as e:
-        if "23505" in str(e) and "ux_lista_atual_nome_normalizado" in str(e):
-            st.warning(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
+        if \"23505\" in str(e) and \"ux_lista_atual_nome_normalizado\" in str(e):
+            st.warning(f\"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.\")
             st.stop()
         raise
-    clear()''') + ''''''
-if _old_new_add not in _source:
-    raise RuntimeError("Ponto de duplicidade do 687107 não encontrado.")
-_source=_source.replace(_old_new_add,_new_new_add,1)
+    clear()"""
+_0074_dup_code = """
+_source = re.sub(r'def add_item\\(name,cat,unit,qty,price\\):\\n    db\\(\"lista_atual\".*?\\n    clear\\(\\)', _0074_dup_fn, _source, count=1, flags=re.S)
+"""
+if _0074_insert_marker not in _source:
+    raise RuntimeError("Ponto de leitura do app_original não encontrado.")
+_source=_source.replace(_0074_insert_marker,_0074_insert_marker+_0074_dup_code,1)
 
 # Fallback do histórico em reruns de dialog/fragment.
 _old_exec='exec(compile(_source, str(Path(__file__)), "exec"))'
