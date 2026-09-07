@@ -140,7 +140,18 @@ _new='''with buy:
         if added: st.success(f"{added} produtos recorrentes adicionados."); st.rerun()
         else: st.info("Não há produtos recorrentes suficientes para montar a lista padrão.")
     if not current: st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong><br>Ao iniciar uma nova compra, o sistema solicitará o orçamento antes do primeiro item.</div>',unsafe_allow_html=True)
+    current=sorted(current,key=lambda x: bool(x.get("confirmado")))
+    _last_status=None
     for item in current:
+        _status=bool(item.get("confirmado"))
+        if _status != _last_status:
+            if _status:
+                st.markdown("### Confirmados")
+                st.caption(f"{sum(bool(x.get('confirmado')) for x in current)} item(ns) já conferido(s)")
+            else:
+                st.markdown("### A confirmar")
+                st.caption(f"{sum(not bool(x.get('confirmado')) for x in current)} item(ns) aguardando preço")
+            _last_status=_status
         ok=bool(item.get("confirmado")); total=num(item.get("quantidade"))*num(item.get("preco_estimado"))
         st.markdown('<div class="card">',unsafe_allow_html=True); a,b=st.columns([4,1])
         with a: st.markdown(f'<div class="product-name {"done" if ok else ""}">{item["nome_produto"]}</div><div class="muted">{item.get("categoria","Mercearia")} · {num(item.get("quantidade")):g} {item.get("unidade","un.")}</div>',unsafe_allow_html=True)
@@ -190,6 +201,9 @@ _new='''with buy:
 '''
 if not _old: raise RuntimeError("Bloco da compra não encontrado")
 _source=_source[:_old.start()]+_new+_source[_old.end():]
+
+# Organiza a lista da compra em duas áreas: pendentes primeiro e confirmados depois.
+_group_patch = '    current=sorted(current,key=lambda x: bool(x.get("confirmado")))\n    _last_status=None\n    for item in current:\n        _status=bool(item.get("confirmado"))\n        if _status != _last_status:\n            if _status:\n                st.markdown("### Confirmados")\n                st.caption(f"{sum(bool(x.get(\'confirmado\')) for x in current)} item(ns) já conferido(s)")\n            else:\n                st.markdown("### A confirmar")\n                st.caption(f"{sum(not bool(x.get(\'confirmado\')) for x in current)} item(ns) aguardando preço")\n            _last_status=_status\n'
 
 # Recalcula produtos que ainda possuem histórico.
 _old=re.search(r"def rebuild_product_stats\(products\):.*?\ndef find_product",_source,flags=re.S)
