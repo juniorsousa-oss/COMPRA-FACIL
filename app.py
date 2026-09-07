@@ -1,20 +1,28 @@
 from pathlib import Path
 import urllib.request
 
-# Voltamos à versão que já tinha a Próxima lista funcionando.
+# Mantém como base a versão que já continha a Próxima lista.
 _BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/687107340a7df519efc6f6f849dbfcb8707968e9/app.py"
 _source = urllib.request.urlopen(_BASE, timeout=10).read().decode("utf-8")
 
-# O bloqueio de duplicidade continua existindo, mas não pode derrubar o Streamlit.
-_old = '''        raise RuntimeError(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")'''
-_new = '''        st.warning(f"O produto **{name.strip()}** já está nesta lista. Altere a quantidade no item já adicionado.")
-        return False'''
-_source = _source.replace(_old, _new, 1)
+# O problema estava no nível de execução: as alterações anteriores eram feitas
+# no wrapper, mas o add_item real é definido em app_original.py.
+# Injeta uma correção somente no código real, depois que os patches antigos
+# terminarem de montar app_original.py.
+_deep_patch = r'''\n# --- correções pontuais aplicadas no app_original.py ---\n\n# Bloqueia duplicidade sem deixar o Streamlit cair em RuntimeError.\n_source = re.sub(r"def add_item\(name,cat,unit,qty,price\):.*?(?=\ndef edit_item)", '''def add_item(name,cat,unit,qty,price):\n    existing=db("lista_atual",params={"select":"id,nome_produto","id":"gt.0"})\n    if any(norm(x.get("nome_produto"))==norm(name) for x in existing):\n        st.warning(f"O produto **{name.strip()}** já está nesta lista. Altere a quantidade no item já adicionado.")\n        return False\n    db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()})\n    clear()\n    return True\n''', _source, count=1, flags=re.S)\n\n# Garante que as funções da Próxima lista existam no mesmo escopo do add_item real.\nif "def move_item_to_next_list(item_id):" not in _source:\n    _next_helpers_runtime = '''def move_item_to_next_list(item_id):\n    rows=db("lista_atual",params={"select":"*","id":f"eq.{item_id}"})\n    if not rows: return False\n    item=rows[0]\n    pending=db("lista_proxima",params={"select":"*"})\n    same=next((p for p in pending if norm(p.get("nome_produto"))==norm(item.get("nome_produto"))),None)\n    if same:\n        new_qty=num(same.get("quantidade"))+num(item.get("quantidade"))\n        db("lista_proxima","PATCH",params={"id":f"eq.{same['id']}"},data={"quantidade":new_qty,"preco_estimado":num(same.get("preco_estimado")) or num(item.get("preco_estimado")),"atualizado_em":now()})\n    else:\n        db("lista_proxima","POST",data={"nome_produto":item.get("nome_produto"),"categoria":item.get("categoria","Mercearia"),"unidade":item.get("unidade","un."),"quantidade":num(item.get("quantidade")),"preco_estimado":num(item.get("preco_estimado")),"preco_unitario":0,"confirmado":False,"criado_em":now(),"atualizado_em":now()})\n    db("lista_atual","DELETE",params={"id":f"eq.{item_id}"})\n    clear()\n    return True\n\ndef restore_next_list():\n    pending=db("lista_proxima",params={"select":"*","order":"id.asc"})\n    if not pending: return 0\n    rows=[{"nome_produto":x.get("nome_produto"),"categoria":x.get("categoria","Mercearia"),"unidade":x.get("unidade","un."),"quantidade":num(x.get("quantidade")),"preco_estimado":num(x.get("preco_estimado")),"preco_unitario":0,"confirmado":False,"criado_em":now(),"atualizado_em":now()} for x in pending]\n    db("lista_atual","POST",data=rows)\n    db("lista_proxima","DELETE",params={"id":"gt.0"})\n    clear()\n    return len(rows)\n\n'''\n    _source = _source.replace("def add_item(", _next_helpers_runtime + "def add_item(", 1)\n\n# Garante o botão Desconfirmar mesmo que o patch anterior não tenha alcançado\n# o código real. Não altera a lógica de confirmação existente.\n_old_confirm_runtime = '''        with d1:\n            st.button("Confirmado",disabled=True,use_container_width=True,key=f"c_done_{item['id']}") if ok else None\n            if not ok and st.button("Confirmar",type="primary",key=f"c{item['id']}",use_container_width=True): st.session_state["confirm_item"]=item; st.rerun()\n'''
+_new_confirm_runtime = '''        with d1:\n            if ok:\n                if st.button("Desconfirmar",use_container_width=True,key=f"unconfirm_{item['id']}"):\n                    edit_item(item["id"],confirmado=False)\n                    st.rerun()\n            else:\n                if st.button("Confirmar",type="primary",key=f"c{item['id']}",use_container_width=True):\n                    st.session_state["confirm_item"]=item\n                    st.rerun()\n'''
+if _old_confirm_runtime in _source:\n    _source = _source.replace(_old_confirm_runtime, _new_confirm_runtime, 1)\n\n# Se a versão real ainda estiver com 3 colunas de ações, preserva a Próxima lista.\n_old_cols_runtime = '        d1,d2,d3=st.columns(3)'
+_new_cols_runtime = '        d1,d2,d3,d4=st.columns(4)'
+_source = _source.replace(_old_cols_runtime, _new_cols_runtime, 1)\n_old_delete_runtime = '''        with d3:\n            if st.button("Excluir",key=f"d{item['id']}",use_container_width=True): remove_item(item["id"]); st.rerun()\n'''
+_new_delete_runtime = '''        with d3:\n            if st.button("Excluir",key=f"d{item['id']}",use_container_width=True): remove_item(item["id"]); st.rerun()\n        with d4:\n            if not ok:\n                if st.button("Próxima lista",key=f"next_{item['id']}",use_container_width=True,help="Guarda este item para a próxima compra."):\n                    try:\n                        if move_item_to_next_list(item["id"]):\n                            st.toast("Item guardado para a próxima lista.")\n                            st.rerun()\n                    except Exception as e:\n                        st.error(f"Não foi possível guardar o item na próxima lista: {e}")\n            else:\n                st.button("Próxima lista",disabled=True,key=f"next_done_{item['id']}",use_container_width=True)\n'''
+if _old_delete_runtime in _source:\n    _source = _source.replace(_old_delete_runtime, _new_delete_runtime, 1)\n\n# A inclusão precisa respeitar o retorno False do bloqueio de duplicidade.\n_old_add_ui_runtime = '                    add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco"))); st.rerun()'
+_new_add_ui_runtime = '''                    if add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco"))):\n                        st.rerun()'''
+_source = _source.replace(_old_add_ui_runtime, _new_add_ui_runtime, 1)\n'''
 
-# Se a inclusão foi recusada, não executa rerun e mantém o aviso visível.
-_old_ui = '''                    add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco"))); st.rerun()'''
-_new_ui = '''                    if add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco"))):
-                        st.rerun()'''
-_source = _source.replace(_old_ui, _new_ui, 1)
+# O 687107 executa o wrapper 0074. Antes desse exec, inserimos o patch no
+# ponto final do 0074, para que ele seja aplicado sobre app_original.py.\n_exec = 'exec(compile(_source, str(Path(__file__)), "exec"))'
+if _exec in _source:
+    _inject = f'_source = _source.replace({_exec!r}, {_deep_patch!r} + "\\n" + {_exec!r}, 1)\n' + _exec
+    _source = _source.replace(_exec, _inject, 1)
 
 exec(compile(_source, str(Path(__file__)), "exec"))
