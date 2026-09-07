@@ -1,12 +1,12 @@
 from pathlib import Path
+import re
 import urllib.request
 import streamlit as st
 
-_BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/687107340a7df519efc6f6f849dbfcb8707968e9/app.py"
+_BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/687107340a7df519efc6f6f849dbfcb8707968e/app.py"
 _source = urllib.request.urlopen(_BASE, timeout=10).read().decode("utf-8")
 
-# O 687 ja contem as correcoes funcionais da proxima lista e demais ajustes.
-# Corrigimos a duplicidade no nivel correto: o 0074 carrega o app_original
+# Corrige a duplicidade no nivel correto: o 0074 carrega o app_original
 # como texto e somente depois o executa.
 _patch_0074 = r'''
 _old_add = """def add_item(name,cat,unit,qty,price):
@@ -29,11 +29,12 @@ if _old_add not in _source:
 _source = _source.replace(_old_add, _new_add, 1)
 '''
 
-# Insere o patch acima dentro do 0074 antes que ele execute o app_original.
-_0074_exec = 'exec(compile(_source,"app_original.py","exec"),globals(),globals())'
-if _0074_exec not in _source:
-    raise RuntimeError("Ponto de execução do 0074 não encontrado.")
-_source = _source.replace(_0074_exec, _patch_0074 + '\n' + _0074_exec, 1)
+# Em vez de procurar a linha inteira de exec, usa uma expressão que aceita
+# espaços diferentes no compile. Isso evita o erro anterior do marcador.
+_marker = re.compile(r'compile\(_source\s*,\s*["\']app_original\.py["\']\s*,\s*["\']exec["\']\)')
+if not _marker.search(_source):
+    raise RuntimeError("Ponto de execução do app_original não encontrado.")
+_source = _marker.sub(_patch_0074 + '\ncompile(_source,"app_original.py","exec")', _source, count=1)
 
 # Fallback para o container do histórico em reruns de dialog/fragment.
 _old_exec = 'exec(compile(_source, str(Path(__file__)), "exec"))'
