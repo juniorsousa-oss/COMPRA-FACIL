@@ -5,8 +5,7 @@ import urllib.request
 _BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/687107340a7df519efc6f6f849dbfcb8707968e9/app.py"
 _source = urllib.request.urlopen(_BASE, timeout=10).read().decode("utf-8")
 
-# O 687107 carrega o wrapper 0074. Inserimos somente a proteção contra
-# duplicidade diretamente no código que o 0074 aplica ao app_original.
+# Correção isolada: impedir duplicidade na lista atual.
 _needle = '_source = urllib.request.urlopen(_BASE_URL, timeout=10).read().decode("utf-8")'
 _injected = '''_source = urllib.request.urlopen(_BASE_URL, timeout=10).read().decode("utf-8")
 
@@ -23,10 +22,9 @@ _runtime_new_add = ''' + repr('''def add_item(name,cat,unit,qty,price):
 ''') + '''
 _source = _source.replace(_runtime_old_add, _runtime_new_add, 1)
 
-# Em reruns originados por diálogos, o objeto da aba pode não existir no
-# escopo daquele rerun. Mantemos a aba normal no app completo e evitamos
-# NameError durante o rerun do diálogo.
-_source = _source.replace('\\nwith hist:', '\\nif "hist" not in globals(): hist=st.container()\\nwith hist:', 1)
+# Rerun do diálogo da próxima lista pode ocorrer antes da criação das tabs.
+# Cria apenas um container temporário nesse caso, sem alterar a aba normal.
+_source = _source.replace('with hist:', 'if "hist" not in globals(): hist=st.container()\nwith hist:', 1)
 '''
 _source = _source.replace(_needle, _injected, 1)
 
