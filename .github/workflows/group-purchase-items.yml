@@ -1,0 +1,41 @@
+name: Group purchase items
+on:
+  push:
+    paths:
+      - '.github/workflows/group-purchase-items.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch app.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app.py')
+          s=p.read_text(encoding='utf-8')
+          old='''_source=_source[:_old.start()]+_new+_source[_old.end():]\n\n# Recalcula produtos que ainda possuem histórico.'''
+          new='''_source=_source[:_old.start()]+_new+_source[_old.end():]\n\n# Organiza a lista da compra em duas áreas: pendentes primeiro e confirmados depois.\n_group_patch = ''' + repr('''    current=sorted(current,key=lambda x: bool(x.get("confirmado")))\n    _last_status=None\n    for item in current:\n        _status=bool(item.get("confirmado"))\n        if _status != _last_status:\n            if _status:\n                st.markdown("### Confirmados")\n                st.caption(f"{sum(bool(x.get('confirmado')) for x in current)} item(ns) já conferido(s)")\n            else:\n                st.markdown("### A confirmar")\n                st.caption(f"{sum(not bool(x.get('confirmado')) for x in current)} item(ns) aguardando preço")\n            _last_status=_status\n''') + '''\n\n# Recalcula produtos que ainda possuem histórico.'''
+          if old not in s:
+              raise SystemExit('Ponto de inserção não encontrado')
+          s=s.replace(old,new,1)
+          # The generated patch above needs to replace the existing loop inside _new, not the wrapper itself.
+          marker='''    if not current: st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong><br>Ao iniciar uma nova compra, o sistema solicitará o orçamento antes do primeiro item.</div>',unsafe_allow_html=True)\n    for item in current:\n'''
+          replacement='''    if not current: st.markdown('<div class="empty"><strong>Sua lista está vazia.</strong><br>Ao iniciar uma nova compra, o sistema solicitará o orçamento antes do primeiro item.</div>',unsafe_allow_html=True)\n    current=sorted(current,key=lambda x: bool(x.get("confirmado")))\n    _last_status=None\n    for item in current:\n        _status=bool(item.get("confirmado"))\n        if _status != _last_status:\n            if _status:\n                st.markdown("### Confirmados")\n                st.caption(f"{sum(bool(x.get('confirmado')) for x in current)} item(ns) já conferido(s)")\n            else:\n                st.markdown("### A confirmar")\n                st.caption(f"{sum(not bool(x.get('confirmado')) for x in current)} item(ns) aguardando preço")\n            _last_status=_status\n'''
+          if marker not in s:
+              raise SystemExit('Bloco da lista não encontrado')
+          s=s.replace(marker,replacement,1)
+          # Remove the unused insertion block if present.
+          s=s.replace(old,'_source=_source[:_old.start()]+_new+_source[_old.end():]\n\n# Recalcula produtos que ainda possuem histórico.',1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'Separa itens confirmados e pendentes na compra'
+          git push
