@@ -13,20 +13,28 @@ jobs:
         run: |
           from pathlib import Path
           p=Path('app.py')
-          s=p.read_text()
-          old='''_source = _source.replace("def add_item(", _runtime_helpers + "def add_item(", 1)'''
-          new='''_source = re.sub(r"def add_item\\(name,cat,unit,qty,price\\):.*?\\ndef edit_item", _runtime_helpers + "\\ndef edit_item", _source, count=1, flags=re.S)'''
-          if old not in s: raise SystemExit('injection line not found')
-          s=s.replace(old,new,1)
-          old2='''if st.button("Adicionar à lista",type="primary",use_container_width=True,key="add_product_submit") and p:\n                    add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco"))); st.rerun()'''
-          new2='''if st.button("Adicionar à lista",type="primary",use_container_width=True,key="add_product_submit") and p:\n                    try:\n                        add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco")))\n                        st.rerun()\n                    except RuntimeError as e:\n                        st.warning(str(e))'''
-          if old2 not in s: raise SystemExit('add UI line not found')
-          s=s.replace(old2,new2,1)
-          p.write_text(s)
+          s=p.read_text(encoding='utf-8')
+          anchor='''_source = _original.read_text(encoding="utf-8")'''
+          inject='''_source = _original.read_text(encoding="utf-8")
+
+# Bloqueia duplicidade diretamente no código original executado.
+_source = re.sub(r'def add_item\\(name,cat,unit,qty,price\\):.*?\\ndef edit_item', '''def add_item(name,cat,unit,qty,price):
+    existing=db("lista_atual",params={"select":"id,nome_produto"})
+    if any(norm(x.get("nome_produto"))==norm(name) for x in existing):
+        st.warning(f"O produto **{name.strip()}** já está nesta lista. Altere a quantidade no item existente.")
+        return False
+    db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()}); clear()
+    return True
+
+def edit_item''', _source, count=1, flags=re.S)
+'''
+          if anchor not in s: raise SystemExit('anchor not found')
+          s=s.replace(anchor,inject,1)
+          p.write_text(s,encoding='utf-8')
       - name: Commit
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
           git add app.py
-          git diff --cached --quiet || git commit -m "Corrige bloqueio de duplicidade na lista"
+          git diff --cached --quiet || git commit -m "Corrige duplicidade no código executado"
           git push
