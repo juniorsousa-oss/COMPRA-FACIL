@@ -5,16 +5,10 @@ _BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/68710734
 _source = urllib.request.urlopen(_BASE, timeout=10).read().decode("utf-8")
 
 # O 687107 carrega o 0074, que por sua vez carrega app_original.py.
-# Injeta a correção diretamente no código do 0074, antes de app_original.py ser executado.
+# Corrige somente o bloco que causa o NameError de hist no rerun.
 _loader = '_source = urllib.request.urlopen(_BASE_URL, timeout=10).read().decode("utf-8")'
-_nested_read = '_source = _original.read_text(encoding="utf-8")'
-_nested_patch = '''_source = _original.read_text(encoding="utf-8")
-_source = _source.replace(
-    "\\nwith hist:",
-    '\\nif "hist" not in globals(): hist=st.container()\\nwith hist:',
-    1
-)
+_patch = '''_source = _source.replace("with hist:", "with st.container():", 1)
 '''
-_source = _source.replace(_loader, _loader + "\n" + "_source = _source.replace(" + repr(_nested_read) + ", " + repr(_nested_patch) + ", 1)", 1)
+_source = _source.replace(_loader, _loader + "\n" + _patch, 1)
 
 exec(compile(_source, str(Path(__file__)), "exec"))
