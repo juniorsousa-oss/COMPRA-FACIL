@@ -46,7 +46,7 @@ _source = re.sub(
     flags=re.S,
 )
 
-# Estas funções precisam entrar no app_original.py que o wrapper-base executa.
+# Injeta as funções diretamente no código-fonte executado.
 _runtime_helpers = '''def move_item_to_next_list(item_id):
     rows=db("lista_atual",params={"select":"*","id":f"eq.{item_id}"})
     if not rows:
@@ -79,13 +79,7 @@ def add_item(name,cat,unit,qty,price):
         raise RuntimeError(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
     db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()}); clear()
 '''
-_runtime_marker = 'compile(_source,"app_original.py","exec")'
-_runtime_injection = '''# Correções de runtime: próxima lista + bloqueio de duplicidade.
-if "def move_item_to_next_list" not in _source:
-    _source = _source.replace("def add_item(", _runtime_helpers + "def add_item(", 1)
-'''
-if _runtime_marker not in _source:
-    raise RuntimeError("Ponto de execução do wrapper-base não encontrado.")
-_source = _source.replace(_runtime_marker, _runtime_injection + '\n' + _runtime_marker, 1)
+# O wrapper-base sempre vem do commit fixo e ainda não contém estes helpers.
+_source = _source.replace("def add_item(", _runtime_helpers + "def add_item(", 1)
 
 exec(compile(_source, str(Path(__file__)), "exec"))
