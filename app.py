@@ -5,10 +5,11 @@ import streamlit as st
 _BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/687107340a7df519efc6f6f849dbfcb8707968e9/app.py"
 _source = urllib.request.urlopen(_BASE, timeout=10).read().decode("utf-8")
 
-# O 687107 carrega o 0074 e executa o app_original no mesmo globals().
-# Mantemos as correções já existentes e apenas garantimos que os helpers
-# da próxima lista estejam disponíveis no mesmo escopo do app_original.
-_helpers = '''\ndef move_item_to_next_list(item_id):
+# Correção pontual: os helpers da próxima lista precisam existir no globals()
+# que o 687107 usa para executar o app_original.
+_helpers = '''
+
+def move_item_to_next_list(item_id):
     rows=db("lista_atual",params={"select":"*","id":f"eq.{item_id}"})
     if not rows: return False
     item=rows[0]
@@ -33,20 +34,18 @@ def restore_next_list():
     return len(rows)
 '''
 
-# Define os helpers no globals() antes de executar o código antigo.
-# As dependências (db, num, norm, now, clear) são resolvidas somente quando
-# as funções forem chamadas, depois que app_original já as tiver definido.
-_source = _source.replace(
-    'exec(compile(_source, str(Path(__file__)), "exec"))',
-    '_source = _source.replace("from pathlib import Path\\nimport re\\nimport urllib.request", "from pathlib import Path\\nimport re\\nimport urllib.request" + _helpers, 1)\nexec(compile(_source, str(Path(__file__)), "exec"))',
-    1,
-)
+# O 687107 executa o 0074 no mesmo globals(); inserir aqui evita que o
+# app_original encontre restore_next_list indefinida.
+_marker = 'from pathlib import Path\nimport re\nimport urllib.request\n'
+if _marker not in _source:
+    raise RuntimeError("Ponto de injeção dos helpers não encontrado.")
+_source = _source.replace(_marker, _marker + _helpers, 1)
 
-# Fallback para o container do histórico em reruns de dialog/fragment.
-_source = _source.replace(
-    'exec(compile(_source, str(Path(__file__)), "exec"))',
-    'import streamlit as st\\nif "hist" not in globals():\\n    hist = st.container()\\n' + 'exec(compile(_source, str(Path(__file__)), "exec"))',
-    1,
-)
+# Mantém o fallback já necessário para o bloco de histórico.
+_old_exec = 'exec(compile(_source, str(Path(__file__)), "exec"))'
+_new_exec = 'import streamlit as st\nif "hist" not in globals():\n    hist = st.container()\n' + _old_exec
+if _old_exec not in _source:
+    raise RuntimeError("Ponto de execução do 687107 não encontrado.")
+_source = _source.replace(_old_exec, _new_exec, 1)
 
 exec(compile(_source, str(Path(__file__)), "exec"))
