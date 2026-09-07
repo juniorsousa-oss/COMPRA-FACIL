@@ -32,29 +32,39 @@ def restore_next_list():
     return len(rows)
 '''
 _marker='from pathlib import Path\nimport re\nimport urllib.request\n'
-if _marker not in _source: raise RuntimeError("Ponto de injeção dos helpers não encontrado.")
+if _marker not in _source:
+    raise RuntimeError("Ponto de injeção dos helpers não encontrado.")
 _source=_source.replace(_marker,_marker+_helpers,1)
 
-# Corrige a camada certa: o 687 executa o 0074, que por sua vez carrega o app_original.
-# O 409 da restrição única vira aviso visível, sem traceback e sem alterar o banco.
-_nested_marker='\n_source = _original.read_text(encoding="utf-8")'
-_nested_patch='''\n\n_source = re.sub(r'def add_item\\(name,cat,unit,qty,price\\):\\n    db\\("lista_atual".*?\\n    clear\\(\\)', ''' + repr('''def add_item(name,cat,unit,qty,price):
+# Corrige somente o tratamento de duplicidade. O banco continua com a restrição
+# única; o 409 do Supabase vira aviso visível em vez de traceback.
+_old_new_add='''_new_add = ''' + repr('''def add_item(name,cat,unit,qty,price):
+    existing=db("lista_atual",params={"select":"id,nome_produto","id":"gt.0"})
+    if any(norm(x.get("nome_produto"))==norm(name) for x in existing):
+        raise RuntimeError(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
+    db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()}); clear()''') + ''''''
+_new_new_add='''_new_add = ''' + repr('''def add_item(name,cat,unit,qty,price):
+    existing=db("lista_atual",params={"select":"id,nome_produto","id":"gt.0"})
+    if any(norm(x.get("nome_produto"))==norm(name) for x in existing):
+        st.warning(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
+        st.stop()
     try:
         db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()})
     except RuntimeError as e:
-        msg=str(e)
-        if "23505" in msg and "ux_lista_atual_nome_normalizado" in msg:
+        if "23505" in str(e) and "ux_lista_atual_nome_normalizado" in str(e):
             st.warning(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
             st.stop()
         raise
-    clear()''') + ''', _source, count=1, flags=re.S)\n'''
-if _nested_marker not in _source: raise RuntimeError("Ponto de patch do app_original não encontrado.")
-_source=_source.replace(_nested_marker,_nested_marker+_nested_patch,1)
+    clear()''') + ''''''
+if _old_new_add not in _source:
+    raise RuntimeError("Ponto de duplicidade do 687107 não encontrado.")
+_source=_source.replace(_old_new_add,_new_new_add,1)
 
-# Fallback do histórico.
+# Fallback do histórico em reruns de dialog/fragment.
 _old_exec='exec(compile(_source, str(Path(__file__)), "exec"))'
 _new_exec='import streamlit as st\nif "hist" not in globals():\n    hist = st.container()\n'+_old_exec
-if _old_exec not in _source: raise RuntimeError("Ponto de execução do 687107 não encontrado.")
+if _old_exec not in _source:
+    raise RuntimeError("Ponto de execução do 687107 não encontrado.")
 _source=_source.replace(_old_exec,_new_exec,1)
 
 exec(compile(_source, str(Path(__file__)), "exec"))
