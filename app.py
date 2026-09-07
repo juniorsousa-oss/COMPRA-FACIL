@@ -9,10 +9,9 @@ _source = urllib.request.urlopen(_BASE, timeout=10).read().decode("utf-8")
 # Corrigimos a duplicidade no nivel correto: o 0074 carrega o app_original
 # como texto e somente depois o executa.
 _patch_0074 = r'''
-_dup_exec = 'exec(compile(_source,"app_original.py","exec"),globals(),globals())'
-_old_add = '''def add_item(name,cat,unit,qty,price):
-    db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()}); clear()'''
-_new_add = '''def add_item(name,cat,unit,qty,price):
+_old_add = """def add_item(name,cat,unit,qty,price):
+    db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()}); clear()"""
+_new_add = """def add_item(name,cat,unit,qty,price):
     existing=db("lista_atual",params={"select":"id,nome_produto","id":"gt.0"})
     if any(norm(x.get("nome_produto"))==norm(name) for x in existing):
         st.warning(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
@@ -24,10 +23,10 @@ _new_add = '''def add_item(name,cat,unit,qty,price):
             st.warning(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
             return
         raise
-    clear()'''
+    clear()"""
 if _old_add not in _source:
     raise RuntimeError("Função add_item original não encontrada para correção de duplicidade.")
-_source = _source.replace(_old_add,_new_add,1)
+_source = _source.replace(_old_add, _new_add, 1)
 '''
 
 # Insere o patch acima dentro do 0074 antes que ele execute o app_original.
