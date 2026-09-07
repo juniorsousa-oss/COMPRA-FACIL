@@ -4,11 +4,15 @@ import urllib.request
 _BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/687107340a7df519efc6f6f849dbfcb8707968e9/app.py"
 _source = urllib.request.urlopen(_BASE, timeout=10).read().decode("utf-8")
 
-# O 687107 carrega o 0074, que executa app_original.py no mesmo globals().
-# Garante que 'hist' exista nesse escopo antes do app_original ser executado.
+# O 687107 carrega o 0074, que por sua vez lê e executa o app_original.py.
+# Corrige somente o escopo do bloco de histórico quando houver rerun de fragmento/dialog.
 _loader = '_source = urllib.request.urlopen(_BASE_URL, timeout=10).read().decode("utf-8")'
 _nested_read = '_source = _original.read_text(encoding="utf-8")'
-_nested_fix = '_source = _original.read_text(encoding="utf-8")\nhist = st.container()'
-_source = _source.replace(_loader, _loader + '\n_source = _source.replace(' + repr(_nested_read) + ', ' + repr(_nested_fix) + ', 1)', 1)
+_nested_fix = '_source = _original.read_text(encoding="utf-8")\n_source = _source.replace("with hist:", "with (hist if \'hist\' in globals() else st.container()):", 1)'
+_source = _source.replace(
+    _loader,
+    _loader + "\n_source = _source.replace(" + repr(_nested_read) + ", " + repr(_nested_fix) + ", 1)",
+    1,
+)
 
 exec(compile(_source, str(Path(__file__)), "exec"))
