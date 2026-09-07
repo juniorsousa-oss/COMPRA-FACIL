@@ -22,6 +22,11 @@ _runtime_new_add = ''' + repr('''def add_item(name,cat,unit,qty,price):
     db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()}); clear()
 ''') + '''
 _source = _source.replace(_runtime_old_add, _runtime_new_add, 1)
+
+# Em reruns originados por diálogos, o objeto da aba pode não existir no
+# escopo daquele rerun. Mantemos a aba normal no app completo e evitamos
+# NameError durante o rerun do diálogo.
+_source = _source.replace('\\nwith hist:', '\\nif "hist" not in globals(): hist=st.container()\\nwith hist:', 1)
 '''
 _source = _source.replace(_needle, _injected, 1)
 
