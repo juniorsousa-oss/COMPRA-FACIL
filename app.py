@@ -158,8 +158,10 @@ _new='''with buy:
         with b: st.markdown('<span class="pill">✓ Confirmado</span>' if ok else f'<div style="text-align:right;font-weight:700">{money(total)}</div>',unsafe_allow_html=True)
         c1,c2,c3=st.columns([1.2,1.3,1])
         with c1:
-            q=st.number_input("Qtd",min_value=.001,value=num(item.get("quantidade")) or 1.,step=1.,key=f"q{item['id']}",disabled=ok)
-            if q!=num(item.get("quantidade")) and not ok: edit_item(item["id"],quantidade=q); st.rerun()
+            q=st.number_input("Qtd",min_value=.001,value=num(item.get("quantidade")) or 1.,step=1.,key=f"q{item['id']}",disabled=False,help="A quantidade pode ser corrigida mesmo depois da confirmação.")
+            if q!=num(item.get("quantidade")):
+                edit_item(item["id"],quantidade=q,confirmado=ok)
+                st.rerun()
         with c2: st.caption("Preço estimado"); st.write(money(item.get("preco_estimado")))
         with c3:
             if ok: st.caption("Preço pago"); st.write(money(item.get("preco_unitario")))
