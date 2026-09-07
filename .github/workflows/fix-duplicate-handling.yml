@@ -1,0 +1,32 @@
+name: Fix duplicate handling
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch app.py
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('app.py')
+          s=p.read_text()
+          old='''_source = _source.replace("def add_item(", _runtime_helpers + "def add_item(", 1)'''
+          new='''_source = re.sub(r"def add_item\\(name,cat,unit,qty,price\\):.*?\\ndef edit_item", _runtime_helpers + "\\ndef edit_item", _source, count=1, flags=re.S)'''
+          if old not in s: raise SystemExit('injection line not found')
+          s=s.replace(old,new,1)
+          old2='''if st.button("Adicionar à lista",type="primary",use_container_width=True,key="add_product_submit") and p:\n                    add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco"))); st.rerun()'''
+          new2='''if st.button("Adicionar à lista",type="primary",use_container_width=True,key="add_product_submit") and p:\n                    try:\n                        add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco")))\n                        st.rerun()\n                    except RuntimeError as e:\n                        st.warning(str(e))'''
+          if old2 not in s: raise SystemExit('add UI line not found')
+          s=s.replace(old2,new2,1)
+          p.write_text(s)
+      - name: Commit
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add app.py
+          git diff --cached --quiet || git commit -m "Corrige bloqueio de duplicidade na lista"
+          git push
