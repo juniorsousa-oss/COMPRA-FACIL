@@ -1,0 +1,36 @@
+name: Apply duplicate fix
+on:
+  pull_request:
+    types: [opened, synchronize]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app_original.py')
+          s=p.read_text(encoding='utf-8')
+          old='''def add_item(name,cat,unit,qty,price):\n    db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()}); clear()\n'''
+          new='''def add_item(name,cat,unit,qty,price):\n    existing=db("lista_atual",params={"select":"id,nome_produto"})\n    if any(norm(x.get("nome_produto"))==norm(name) for x in existing):\n        st.warning(f"O produto **{name.strip()}** já está nesta lista. Altere a quantidade no item existente.")\n        return False\n    db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()}); clear()\n    return True\n'''
+          if old not in s: raise SystemExit('add_item alvo nao encontrado')
+          s=s.replace(old,new,1)
+          old2='''                    add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco"))); st.rerun()'''
+          new2='''                    if add_item(selected,p.get("categoria","Mercearia"),p.get("unidade","un."),qty,num(p.get("ultimo_preco"))): st.rerun()'''
+          if old2 not in s: raise SystemExit('botao de adicionar alvo nao encontrado')
+          s=s.replace(old2,new2,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit fix and remove temporary workflow
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git rm .github/workflows/pr-fix-duplicate.yml
+          git rm -f .github/fix-duplicate-trigger.txt .github/workflows/fix-duplicate-list.yml || true
+          git add app_original.py
+          git commit -m "Corrige bloqueio de duplicidade na lista"
+          git push
