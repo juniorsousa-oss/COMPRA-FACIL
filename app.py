@@ -1,32 +1,99 @@
 from pathlib import Path
 import urllib.request
+import streamlit as st
 
-# Carrega a versão que contém a exportação de produtos sem preço.
-BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/c8f65e0243d4fc2ff1dec0e0d186eec161f52f21/app.py"
+# Mantém toda a versão já validada do app e acrescenta apenas a identificação
+# do supermercado no momento da finalização da compra.
+BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/1e4ada77cce7266f607ef7712c2714046ddecf6d/app.py"
 source = urllib.request.urlopen(BASE, timeout=10).read().decode("utf-8")
 
-# O erro vinha do Path.read_text: em reruns do Streamlit, a função salva como
-# "original" podia na verdade ser um patch de uma execução anterior. Isso fazia
-# um _patched_read_text chamar outro _patched_read_text e o mesmo app_original
-# era transformado mais de uma vez.
-#
-# Em vez de depender de Path.read_text, fazemos a leitura-base diretamente com
-# io.open. Assim a transformação do app_original acontece uma única vez e não
-# depende do estado deixado por reruns anteriores.
-_old_safe_reader = '''_new_reader = \'\'\'_original_read_text = getattr(Path, "_compra_facil_original_read_text", Path.read_text)
-if not hasattr(Path, "_compra_facil_original_read_text"):
-    Path._compra_facil_original_read_text = _original_read_text\'\'\''''
+_original_button = st.button
 
-_new_safe_reader = '''_new_reader = \'\'\'import io as _path_io
-def _original_read_text(self, *args, **kwargs):
-    _encoding = kwargs.get("encoding", args[0] if len(args) > 0 else None)
-    _errors = kwargs.get("errors", args[1] if len(args) > 1 else None)
-    _newline = kwargs.get("newline", args[2] if len(args) > 2 else None)
-    with _path_io.open(self, mode="r", encoding=_encoding, errors=_errors, newline=_newline) as _file:
-        return _file.read()\'\'\''''
+def _button_with_market(label, *args, **kwargs):
+    clicked = _original_button(label, *args, **kwargs)
+    if label == "Finalizar e salvar compra" and clicked:
+        st.session_state["finish_market_requested"] = True
+        return False
+    return clicked
 
-if _old_safe_reader not in source:
-    raise RuntimeError("Ponto de correção segura do leitor não encontrado.")
-source = source.replace(_old_safe_reader, _new_safe_reader, 1)
+# Impede que o fluxo antigo finalize imediatamente. Ao clicar em finalizar,
+# abrimos primeiro a identificação do supermercado.
+st.button = _button_with_market
+try:
+    exec(compile(source, str(Path(__file__)), "exec"), globals(), globals())
+finally:
+    st.button = _original_button
 
-exec(compile(source, str(Path(__file__)), "exec"))
+
+def _finish_with_market(items, purchase_budget, market):
+    """Executa a finalização já existente e injeta o supermercado no registro."""
+    _original_db = globals()["db"]
+
+    def _db_with_market(table, method="GET", params=None, data=None):
+        if table == "compras" and method == "POST" and isinstance(data, dict):
+            data = dict(data)
+            data["supermercado"] = market.strip()
+        return _original_db(table, method, params, data)
+
+    globals()["db"] = _db_with_market
+    try:
+        return globals()["finish"](items, purchase_budget)
+    finally:
+        globals()["db"] = _original_db
+
+
+@st.dialog("Finalizar compra")
+def _market_dialog():
+    st.markdown("### Onde esta compra foi realizada?")
+    st.caption("O supermercado ficará vinculado ao histórico desta compra para permitir comparações futuras de preços e gastos por estabelecimento.")
+
+    _known_markets = sorted({
+        str(p.get("supermercado") or "").strip()
+        for p in globals().get("history", [])
+        if str(p.get("supermercado") or "").strip()
+    }, key=str.lower)
+
+    _market = ""
+    if _known_markets:
+        _choice = st.selectbox(
+            "Supermercado",
+            ["Selecione..."] + _known_markets + ["Outro supermercado"],
+            key="finish_market_choice",
+        )
+        if _choice == "Outro supermercado":
+            _market = st.text_input(
+                "Nome do supermercado",
+                placeholder="Ex.: Supermercado X",
+                key="finish_market_other",
+            ).strip()
+        elif _choice != "Selecione...":
+            _market = _choice
+    else:
+        _market = st.text_input(
+            "Supermercado",
+            placeholder="Ex.: Supermercado X",
+            key="finish_market_first",
+        ).strip()
+
+    _a, _b = st.columns(2)
+    if _a.button("Cancelar", use_container_width=True, key="cancel_finish_market"):
+        st.session_state.pop("finish_market_requested", None)
+        st.rerun()
+
+    if _b.button("Finalizar compra", type="primary", use_container_width=True, key="confirm_finish_market"):
+        if not _market:
+            st.error("Informe o supermercado onde a compra foi realizada.")
+        else:
+            try:
+                _finish_with_market(globals().get("current", []), globals().get("budget", 0), _market)
+                st.session_state.pop("finish_market_requested", None)
+                st.session_state.pop("finish_market_choice", None)
+                st.session_state.pop("finish_market_other", None)
+                st.session_state.pop("finish_market_first", None)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao finalizar: {e}")
+
+
+if st.session_state.get("finish_market_requested"):
+    _market_dialog()
