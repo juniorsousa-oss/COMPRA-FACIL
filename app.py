@@ -48,23 +48,35 @@ def restore_next_list():
 
 '''
 
-# O 687 carrega o 0074. O bloco abaixo é injetado no 0074 imediatamente
-# antes de ele executar o app_original já transformado.
+# Este bloco precisa ser executado dentro do wrapper 0074, porque é nele
+# que _source já contém o texto final de app_original.py.
 inner = (
     "\nimport re as _patch_re\n"
     "if 'def move_item_to_next_list' not in _source:\n"
     "    _source = _source.replace('def add_item(', " + repr(next_helpers + "def add_item(") + ", 1)\n"
     "_patch_pattern = r'def add_item\\(name,cat,unit,qty,price\\):.*?\\ndef edit_item'\n"
-    "_source = _patch_re.sub(_patch_pattern, " + repr(safe_add + "\ndef edit_item") + ", _source, count=1, flags=_patch_re.S)\n"
+    "_source, _patch_count = _patch_re.subn(_patch_pattern, " + repr(safe_add + "\ndef edit_item") + ", _source, count=1, flags=_patch_re.S)\n"
+    "if _patch_count != 1:\n"
+    "    raise RuntimeError('Tratamento de item duplicado nao foi aplicado.')\n"
 )
 
-marker = 'exec(compile(_source, str(Path(__file__)), "exec"))'
-inject = "\n_patch_marker = " + repr(marker) + "\n_patch_inner = " + repr(inner) + "\n_source = _source.replace(_patch_marker, _patch_inner + _patch_marker, 1)\n"
+# A fonte carregada aqui é o wrapper 687. Antes de ele executar o 0074,
+# inserimos no texto do 0074 o patch acima. O marcador abaixo é o final
+# real do 0074, não o final do 687.
+inner_marker = 'exec(compile(_source,"app_original.py","exec"),globals(),globals())'
+outer_marker = 'exec(compile(_source, str(Path(__file__)), "exec"))'
+bridge = (
+    "\n_inner_marker = " + repr(inner_marker) + "\n"
+    "_inner_patch = " + repr(inner) + "\n"
+    "if _inner_marker not in _source:\n"
+    "    raise RuntimeError('Ponto de execucao do app_original nao encontrado no 0074.')\n"
+    "_source = _source.replace(_inner_marker, _inner_patch + _inner_marker, 1)\n"
+)
 
-pos = source.rfind(marker)
+pos = source.rfind(outer_marker)
 if pos < 0:
     raise RuntimeError("Execucao do 687 nao encontrada.")
-source = source[:pos] + inject + source[pos:]
+source = source[:pos] + bridge + source[pos:]
 
 if "hist" not in globals():
     hist = st.container()
