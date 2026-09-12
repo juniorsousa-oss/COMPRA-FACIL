@@ -4,6 +4,31 @@ import urllib.request
 BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/5734e4c868a929fbb2fb4a4c3e6824f9638d06e4/app.py"
 source = urllib.request.urlopen(BASE, timeout=10).read().decode("utf-8")
 
+# O wrapper 5734 intercepta Path.read_text para aplicar o bloco de preço sugerido.
+# Em reruns do Streamlit, Path.read_text pode continuar apontando para o patch anterior,
+# provocando recursão. Guardamos sempre a implementação original e restauramos ao final.
+_old_reader = "_original_read_text = Path.read_text"
+_new_reader = '''_original_read_text = getattr(Path, "_compra_facil_original_read_text", Path.read_text)
+if not hasattr(Path, "_compra_facil_original_read_text"):
+    Path._compra_facil_original_read_text = _original_read_text'''
+if _old_reader not in source:
+    raise RuntimeError("Ponto de proteção do leitor de arquivo não encontrado.")
+source = source.replace(_old_reader, _new_reader, 1)
+
+_old_exec = '''Path.read_text = _patched_read_text
+
+exec(compile(source, str(Path(__file__)), "exec"))'''
+_new_exec = '''Path.read_text = _patched_read_text
+try:
+    exec(compile(source, str(Path(__file__)), "exec"))
+finally:
+    Path.read_text = _original_read_text'''
+if _old_exec not in source:
+    raise RuntimeError("Ponto de restauração do leitor de arquivo não encontrado.")
+source = source.replace(_old_exec, _new_exec, 1)
+
+# Acrescenta, dentro do expander de preço sugerido, a exportação dos produtos
+# que ainda não possuem nem último preço real nem preço sugerido.
 _old = '''    with st.expander("Preço sugerido para produtos sem histórico",expanded=False):
         st.caption("Regra usada nas novas listas: primeiro o último preço real; se não existir, o preço sugerido; se ambos estiverem vazios, o produto permanece sem referência.")
         _suggest_names=[p.get("nome","") for p in products if p.get("nome")]
