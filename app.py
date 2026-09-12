@@ -5,8 +5,20 @@ import streamlit as st
 BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/687107340a7df519efc6f6f849dbfcb8707968e9/app.py"
 source = urllib.request.urlopen(BASE, timeout=10).read().decode("utf-8")
 
-old = "def add_item(name,cat,unit,qty,price):\n    db(\"lista_atual\",\"POST\",data={\"nome_produto\":name.strip(),\"categoria\":cat,\"unidade\":unit or \"un.\",\"quantidade\":num(qty),\"preco_estimado\":num(price),\"preco_unitario\":0,\"confirmado\":False,\"atualizado_em\":now()}); clear()\n"
-new = "def add_item(name,cat,unit,qty,price):\n    existing=db(\"lista_atual\",params={\"select\":\"id,nome_produto\",\"id\":\"gt.0\"})\n    if any(norm(x.get(\"nome_produto\"))==norm(name) for x in existing):\n        st.warning(f\"O produto '{name.strip()}' ja esta nesta lista. Altere a quantidade no item ja adicionado.\")\n        return\n    try:\n        db(\"lista_atual\",\"POST\",data={\"nome_produto\":name.strip(),\"categoria\":cat,\"unidade\":unit or \"un.\",\"quantidade\":num(qty),\"preco_estimado\":num(price),\"preco_unitario\":0,\"confirmado\":False,\"atualizado_em\":now()})\n    except RuntimeError as e:\n        if \"23505\" in str(e):\n            st.warning(f\"O produto '{name.strip()}' ja esta nesta lista. Altere a quantidade no item ja adicionado.\")\n            return\n        raise\n    clear()\n"
+safe_add = '''def add_item(name,cat,unit,qty,price):
+    existing=db("lista_atual",params={"select":"id,nome_produto"})
+    if any(norm(x.get("nome_produto"))==norm(name) for x in existing):
+        st.warning(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
+        st.stop()
+    try:
+        db("lista_atual","POST",data={"nome_produto":name.strip(),"categoria":cat,"unidade":unit or "un.","quantidade":num(qty),"preco_estimado":num(price),"preco_unitario":0,"confirmado":False,"atualizado_em":now()})
+    except RuntimeError as e:
+        if "23505" in str(e):
+            st.warning(f"O produto '{name.strip()}' já está nesta lista. Altere a quantidade no item já adicionado.")
+            st.stop()
+        raise
+    clear()
+'''
 
 next_helpers = '''def move_item_to_next_list(item_id):
     rows=db("lista_atual",params={"select":"*","id":f"eq.{item_id}"})
@@ -36,15 +48,14 @@ def restore_next_list():
 
 '''
 
-# O 687 contem o codigo do 0074. Inserimos dentro dele uma pequena
-# correcao que o 0074 executara depois de carregar e montar app_original.
-# Aqui entram somente as funcoes que faltavam para a funcionalidade
-# "Proxima lista" e a protecao ja existente contra item duplicado.
+# O 687 carrega o 0074. O bloco abaixo é injetado no 0074 imediatamente
+# antes de ele executar o app_original já transformado.
 inner = (
-    "\n"
+    "\nimport re as _patch_re\n"
     "if 'def move_item_to_next_list' not in _source:\n"
     "    _source = _source.replace('def add_item(', " + repr(next_helpers + "def add_item(") + ", 1)\n"
-    "_source = _source.replace(" + repr(old) + ", " + repr(new) + ", 1)\n"
+    "_patch_pattern = r'def add_item\\(name,cat,unit,qty,price\\):.*?\\ndef edit_item'\n"
+    "_source = _patch_re.sub(_patch_pattern, " + repr(safe_add + "\ndef edit_item") + ", _source, count=1, flags=_patch_re.S)\n"
 )
 
 marker = 'exec(compile(_source, str(Path(__file__)), "exec"))'
