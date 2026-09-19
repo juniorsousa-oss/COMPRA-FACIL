@@ -1,6 +1,7 @@
 from pathlib import Path
 import urllib.request
 import streamlit as st
+from excel_import import parse_excel as _parse_excel_import, build_excel as _build_excel_export
 
 # Mantém toda a versão já validada do app e acrescenta apenas a identificação
 # do supermercado no momento da finalização da compra.
@@ -613,7 +614,8 @@ def _clear_ocr_state():
     for key in (
         "photo_import_requested", "photo_ocr_text", "photo_ocr_candidates",
         "photo_import_file", "photo_engine", "photo_ocr_confidence",
-        "photo_engine_note", "photo_ai_raw"
+        "photo_engine_note", "photo_ai_raw", "excel_import_file",
+        "photo_import_kind", "photo_import_active_kind"
     ):
         st.session_state.pop(key, None)
     # Limpa também os widgets dinâmicos da revisão anterior.
@@ -692,37 +694,56 @@ def _photo_import_dialog():
     _norm = globals()["norm"]
     _num = globals()["num"]
 
-    st.caption("Envie uma foto ou print. O app tenta reconhecer os itens e você revisa tudo antes de incluir.")
-    uploaded = st.file_uploader(
-        "Foto ou print da lista",
-        type=["png", "jpg", "jpeg", "webp"],
-        key="photo_import_file",
-    )
+    st.caption("Escolha foto ou Excel. Revise os produtos antes de incluí-los na lista.")
+    import_kind = st.radio("Forma de importação", ["Foto / print", "Excel (.xlsx)"],
+                           horizontal=True, key="photo_import_kind")
+    if st.session_state.get("photo_import_active_kind") != import_kind:
+        for field in ("photo_ocr_text", "photo_ocr_candidates", "photo_engine",
+                      "photo_ocr_confidence", "photo_engine_note", "photo_ai_raw"):
+            st.session_state.pop(field, None)
+        for field in list(st.session_state):
+            if str(field).startswith(("ocr_product_", "ocr_qty_", "ocr_alt_", "ocr_use_alt_",
+                                      "ocr_new_", "ocr_cat_", "ocr_unit_")):
+                st.session_state.pop(field, None)
+        st.session_state["photo_import_active_kind"] = import_kind
 
-    ai_available = bool(_photo_ai_key())
-    mode = st.radio(
-        "Modo de leitura",
-        ["Automático", "IA para manuscrito", "OCR local"],
-        horizontal=True,
-        key="photo_read_mode",
-    )
-    if ai_available:
-        st.caption(f"Gemini disponível ({_photo_ai_model()}). No modo Automático ele só é acionado quando o OCR local estiver fraco.")
+    if import_kind == "Excel (.xlsx)":
+        uploaded = st.file_uploader("Selecionar planilha Excel", type=["xlsx"], key="excel_import_file")
+        st.caption("O Excel é lido diretamente, sem usar Gemini. A coluna PRODUTO é obrigatória; QUANTIDADE, UNIDADE, CATEGORIA e ALTERNATIVA são opcionais.")
+        st.download_button("Baixar modelo Excel", data=_build_excel_export(template=True),
+                           file_name="modelo_lista_compra_facil.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           use_container_width=True, key="excel_template_dialog")
+        mode = None
     else:
-        st.caption("Gemini ainda não configurado. Automático usa OCR local até GEMINI_API_KEY ser adicionada aos Secrets.")
+        uploaded = st.file_uploader("Foto ou print da lista", type=["png", "jpg", "jpeg", "webp"],
+                                    key="photo_import_file")
+        mode = st.radio("Modo de leitura", ["Automático", "IA para manuscrito", "OCR local"],
+                        horizontal=True, key="photo_read_mode")
+        if _photo_ai_key():
+            st.caption(f"Gemini disponível ({_photo_ai_model()}). No modo Automático ele só é acionado quando o OCR local estiver fraco.")
+        else:
+            st.caption("Gemini ainda não configurado. Automático usa OCR local até GEMINI_API_KEY ser adicionada aos Secrets.")
 
     c1, c2 = st.columns(2)
     if c1.button("Cancelar", use_container_width=True, key="photo_cancel"):
         _clear_ocr_state()
         st.rerun()
 
-    if c2.button("Ler imagem", type="primary", use_container_width=True, key="photo_read"):
+    if c2.button("Ler planilha" if import_kind == "Excel (.xlsx)" else "Ler imagem",
+                 type="primary", use_container_width=True, key="photo_read"):
         if uploaded is None:
-            st.warning("Selecione uma imagem primeiro.")
+            st.warning("Selecione um arquivo primeiro.")
         else:
             try:
-                with st.spinner("Analisando a imagem..."):
-                    result = _analyze_photo(uploaded.getvalue(), mode, products)
+                with st.spinner("Lendo a planilha..." if import_kind == "Excel (.xlsx)" else "Analisando a imagem..."):
+                    if import_kind == "Excel (.xlsx)":
+                        result = _parse_excel_import(
+                            uploaded.getvalue(), products, _norm, globals()["find_product"],
+                            _num, _ocr_parse_line,
+                        )
+                    else:
+                        result = _analyze_photo(uploaded.getvalue(), mode, products)
                 st.session_state["photo_ocr_text"] = result.get("text", "")
                 st.session_state["photo_ocr_candidates"] = result.get("candidates", [])
                 st.session_state["photo_engine"] = result.get("engine", "")
@@ -731,7 +752,7 @@ def _photo_import_dialog():
                 st.session_state["photo_ai_raw"] = result.get("ai_raw", "")
                 st.rerun()
             except Exception as e:
-                st.error(f"Não consegui ler essa imagem: {e}")
+                st.error(f"Não consegui ler o arquivo: {e}")
 
     text = st.session_state.get("photo_ocr_text", "")
     candidates = st.session_state.get("photo_ocr_candidates") or []
@@ -741,8 +762,11 @@ def _photo_import_dialog():
 
     if engine:
         m1, m2 = st.columns(2)
-        m1.metric("Leitura utilizada", engine)
-        m2.metric("Confiança OCR local", f"{ocr_conf:.0f}%")
+        m1.metric("Origem", engine)
+        if engine == "Excel":
+            m2.metric("Itens identificados", len(candidates))
+        else:
+            m2.metric("Confiança OCR local", f"{ocr_conf:.0f}%")
         if note:
             st.info(note)
 
@@ -764,6 +788,7 @@ def _photo_import_dialog():
             ["Mercearia", "Hortifruti", "Carnes", "Bebidas", "Laticínios e ovos", "Padaria", "Congelados",
              "Limpeza", "Higiene pessoal", "Casa e utilidades", "Pet", "Infantil", "Saúde e farmácia"]
             + [str(p.get("categoria") or "Mercearia") for p in products]
+            + [str(candidate.get("category") or "Mercearia") for candidate in candidates]
         ))
         options = ["— Ignorar —", "— Selecionar produto —", "— Cadastrar como novo —"] + names
         alt_options = ["— Sem alternativa —"] + names
@@ -779,7 +804,7 @@ def _photo_import_dialog():
                 st.caption(f"Observação: {candidate['observation']}")
 
             default_name = candidate.get("suggested")
-            default_index = options.index(default_name) if default_name in options else 1
+            default_index = options.index(default_name) if default_name in options else (2 if engine == "Excel" else 1)
             a, b = st.columns([3, 1])
             choice = a.selectbox(
                 "Produto cadastrado",
@@ -875,23 +900,43 @@ def _photo_import_dialog():
                             f"{added} item(ns) adicionado(s). {len(skipped)} ignorado(s), principalmente por duplicidade."
                         )
                     else:
-                        st.session_state["photo_import_result"] = f"{added} item(ns) adicionado(s) pela imagem."
+                        st.session_state["photo_import_result"] = f"{added} item(ns) adicionado(s) " + ("pela planilha." if engine == "Excel" else "pela imagem.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao incluir os itens: {e}")
     elif engine:
-        st.warning("Não encontrei itens suficientes. Tente IA para manuscrito ou envie uma foto mais próxima e nítida.")
+        st.warning("A planilha não apresentou itens válidos." if engine == "Excel" else "Não encontrei itens suficientes. Tente IA para manuscrito ou envie uma foto mais próxima e nítida.")
 
 
 # A funcionalidade fica dentro da aba Compra sem interferir nos fluxos já validados.
 if "buy" in globals():
     with globals()["buy"]:
         st.divider()
-        st.markdown("### Adicionar por foto ou print")
-        st.caption("Fotografe uma lista ou envie um print. Você revisa o reconhecimento antes de incluir os itens.")
-        if st.button("Ler foto ou print da lista", use_container_width=True, key="open_photo_import"):
+        st.markdown("### Importar lista por foto ou Excel")
+        st.caption("Envie uma foto para leitura pelo Gemini ou importe diretamente uma planilha Excel.")
+        photo_col, excel_col = st.columns(2)
+        if photo_col.button("Enviar foto ou print", use_container_width=True, key="open_photo_import"):
+            st.session_state["photo_import_kind"] = "Foto / print"
             st.session_state["photo_import_requested"] = True
             st.rerun()
+        if excel_col.button("Enviar Excel (.xlsx)", use_container_width=True, key="open_excel_import"):
+            st.session_state["photo_import_kind"] = "Excel (.xlsx)"
+            st.session_state["photo_import_requested"] = True
+            st.rerun()
+        model_col, export_col = st.columns(2)
+        model_col.download_button(
+            "Baixar modelo Excel", data=_build_excel_export(template=True),
+            file_name="modelo_lista_compra_facil.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True, key="excel_template_main",
+        )
+        pending = [item for item in globals().get("current", []) if not item.get("confirmado")]
+        export_col.download_button(
+            "Exportar pendentes Excel", data=_build_excel_export(pending, num=globals()["num"]),
+            file_name="lista_pendente_compra_facil.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True, disabled=not bool(pending), key="excel_export_pending",
+        )
         if st.session_state.get("photo_import_result"):
             st.success(st.session_state.pop("photo_import_result"))
 
