@@ -7,25 +7,41 @@ from excel_import import parse_excel as _parse_excel_import, build_excel as _bui
 # do supermercado no momento da finalização da compra.
 BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/1e4ada77cce7266f607ef7712c2714046ddecf6d/app.py"
 source = urllib.request.urlopen(BASE, timeout=10).read().decode("utf-8")
-import io as _group_io
+# Agrupamento aplicado somente ao código FINAL da interface, após os
+# ajustes de produto alternativo, preços e demais compatibilidades.
+# Não altera os wrappers/versões antigas que constroem essa interface.
+_compra_compile_original = compile
 
-# Aplica somente na montagem da lista a organização por categoria dos pendentes.
-# As versões anteriores e a integração do Gemini continuam intactas.
-_group_original_urlopen = urllib.request.urlopen
-_group_legacy_ref = "0074e6f1fe2b4bfdee87793c6bff1fec391d35cc"
+def _compile_grouped_buy(source_code, filename, mode, *args, **kwargs):
+    if filename != "app_original.py" or not isinstance(source_code, str):
+        return _compra_compile_original(source_code, filename, mode, *args, **kwargs)
 
-def _urlopen_with_pending_groups(url, *args, **kwargs):
-    response = _group_original_urlopen(url, *args, **kwargs)
-    if _group_legacy_ref not in str(url) or not str(url).endswith("/app.py"):
-        return response
-    legacy = response.read().decode("utf-8")
     old_sort = '    current=sorted(current,key=lambda x: bool(x.get("confirmado")))\n    _last_status=None\n    for item in current:'
-    new_sort = ('    current=sorted(current,key=lambda x: (bool(x.get("confirmado")), '
-                'str(x.get("categoria") or "Outros").strip().casefold(), '
-                'str(x.get("nome_produto") or "").casefold()))\n'
-                '    _last_status=None\n    _last_category=None\n    for item in current:')
+    new_sort = (
+        '    current=sorted(current,key=lambda x: (bool(x.get("confirmado")), '
+        'str(x.get("categoria") or "Outros").strip().casefold(), '
+        'str(x.get("nome_produto") or "").casefold()))\n'
+        '    _last_status=None\n'
+        '    _last_category=None\n'
+        '    _group_open=False\n'
+        '    _confirmed_open=False\n'
+        '    for item in current:'
+    )
+    old_confirm = (
+        '            if _status:\n'
+        '                st.markdown("### Confirmados")\n'
+        '                st.caption(f"{sum(bool(x.get(' + "'confirmado'" + ')) for x in current)} item(ns) já conferido(s)")'
+    )
+    new_confirm = '''            if _status:
+                _confirmed_count=sum(bool(x.get("confirmado")) for x in current)
+                _confirmed_open=bool(st.session_state.get("compra_grupo_confirmados",False))
+                _arrow="▼" if _confirmed_open else "▶"
+                if st.button(f"{_arrow} OK · {_confirmed_count} item(ns) selecionado(s)",
+                             key="btn_compra_confirmados",use_container_width=True):
+                    st.session_state["compra_grupo_confirmados"]=not _confirmed_open
+                    st.rerun()'''
     old_header = '            _last_status=_status\n        ok=bool(item.get("confirmado")); total='
-    new_header = ('''            _last_status=_status
+    new_header = '''            _last_status=_status
             _last_category=None
         if not _status:
             _category=str(item.get("categoria") or "Outros").strip() or "Outros"
@@ -47,30 +63,17 @@ def _urlopen_with_pending_groups(url, *args, **kwargs):
                 continue
         elif not _confirmed_open:
             continue
-        ok=bool(item.get("confirmado")); total=''' )
-    # Todos os produtos OK compartilham um único bloco recolhível.
-    old_confirm = (
-        '            if _status:\n'
-        '                st.markdown("### Confirmados")\n'
-        '                st.caption(f"{sum(bool(x.get(' + "'confirmado'" + ')) for x in current)} item(ns) já conferido(s)")'
-    )
-    new_confirm = '''            if _status:
-                _confirmed_count=sum(bool(x.get("confirmado")) for x in current)
-                _confirmed_key="compra_grupo_confirmados"
-                _confirmed_open=bool(st.session_state.get(_confirmed_key, False))
-                _confirmed_arrow="▼" if _confirmed_open else "▶"
-                if st.button(f"{_confirmed_arrow} OK · {_confirmed_count} item(ns) selecionado(s)",
-                             key="btn_compra_confirmados",use_container_width=True):
-                    st.session_state[_confirmed_key]=not _confirmed_open
-                    st.rerun()
-'''
-    # A alteração é restrita ao bloco principal de compras, não ao trecho
-    # de compatibilidade _group_patch definido na versão antiga.
-    if legacy.count(old_sort) != 1 or legacy.count(old_header) != 1 or legacy.count(old_confirm) != 1:
-        raise RuntimeError("Não foi possível localizar o bloco original de agrupamento da lista.")
-    legacy=legacy.replace(old_sort,new_sort,1).replace(old_confirm,new_confirm,1).replace(old_header,new_header,1)
-    compile(legacy,"app_compra_agrupada.py","exec")
-    return _group_io.BytesIO(legacy.encode("utf-8"))
+        ok=bool(item.get("confirmado")); total='''
+    # Preserva a aplicação caso um wrapper anterior modifique este trecho.
+    if not (source_code.count(old_sort)==1 and
+            source_code.count(old_confirm)==1 and
+            source_code.count(old_header)==1):
+        return _compra_compile_original(source_code, filename, mode, *args, **kwargs)
+
+    updated=(source_code.replace(old_sort,new_sort,1)
+                        .replace(old_confirm,new_confirm,1)
+                        .replace(old_header,new_header,1))
+    return _compra_compile_original(updated, filename, mode, *args, **kwargs)
 
 
 _original_button = st.button
@@ -85,11 +88,11 @@ def _button_with_market(label, *args, **kwargs):
 # Impede que o fluxo antigo finalize imediatamente. Ao clicar em finalizar,
 # abrimos primeiro a identificação do supermercado.
 st.button = _button_with_market
-urllib.request.urlopen = _urlopen_with_pending_groups
+compile = _compile_grouped_buy
 try:
     exec(compile(source, str(Path(__file__)), "exec"), globals(), globals())
 finally:
-    urllib.request.urlopen = _group_original_urlopen
+    compile = _compra_compile_original
     st.button = _original_button
 
 
