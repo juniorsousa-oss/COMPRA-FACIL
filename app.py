@@ -98,17 +98,17 @@ def _market_dialog():
 def _photo_ai_key():
     import os as _os
     try:
-        return str(st.secrets.get("OPENAI_API_KEY", _os.getenv("OPENAI_API_KEY", "")) or "").strip()
+        return str(st.secrets.get("GEMINI_API_KEY", _os.getenv("GEMINI_API_KEY", "")) or "").strip()
     except Exception:
-        return str(_os.getenv("OPENAI_API_KEY", "") or "").strip()
+        return str(_os.getenv("GEMINI_API_KEY", "") or "").strip()
 
 
 def _photo_ai_model():
     import os as _os
     try:
-        return str(st.secrets.get("OPENAI_VISION_MODEL", _os.getenv("OPENAI_VISION_MODEL", "gpt-5.6-luna")) or "gpt-5.6-luna").strip()
+        return str(st.secrets.get("GEMINI_VISION_MODEL", _os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash-lite")) or "gemini-2.5-flash-lite").strip()
     except Exception:
-        return str(_os.getenv("OPENAI_VISION_MODEL", "gpt-5.6-luna") or "gpt-5.6-luna").strip()
+        return str(_os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash-lite") or "gemini-2.5-flash-lite").strip()
 
 
 def _photo_preprocess(file_bytes, for_ai=False):
@@ -268,29 +268,32 @@ def _ocr_build_candidates(text, products):
 
 
 def _ai_response_text(body):
-    if isinstance(body, dict) and body.get("output_text"):
-        return str(body.get("output_text"))
+    """Extrai o texto retornado pelo Gemini generateContent."""
+    if not isinstance(body, dict):
+        return ""
     texts = []
-    for item in (body or {}).get("output", []) if isinstance(body, dict) else []:
-        for content in item.get("content", []) if isinstance(item, dict) else []:
-            if isinstance(content, dict) and content.get("type") == "output_text":
-                texts.append(str(content.get("text") or ""))
+    for candidate in body.get("candidates", []) or []:
+        content = candidate.get("content", {}) if isinstance(candidate, dict) else {}
+        for part in content.get("parts", []) or []:
+            if isinstance(part, dict) and part.get("text"):
+                texts.append(str(part.get("text")))
     return "\n".join(texts).strip()
 
 
 def _ai_extract_items(file_bytes, products):
-    """Usa visão apenas quando configurada. A imagem não é salva no Supabase."""
+    """Usa Gemini com visão quando configurado. A imagem não é salva no Supabase."""
     import base64 as _base64
     import json as _json
     import re as _re
     import requests as _requests
+    from urllib.parse import quote as _urlquote
 
     api_key = _photo_ai_key()
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY não configurada nos Secrets do Streamlit.")
+        raise RuntimeError("GEMINI_API_KEY não configurada nos Secrets do Streamlit.")
 
     prepared, mime = _photo_preprocess(file_bytes, for_ai=True)
-    data_url = f"data:{mime};base64,{_base64.b64encode(prepared).decode('ascii')}"
+    encoded_image = _base64.b64encode(prepared).decode("ascii")
     categories = [
         "Mercearia", "Hortifruti", "Carnes", "Bebidas", "Laticínios e ovos",
         "Padaria", "Congelados", "Limpeza", "Higiene pessoal",
@@ -333,26 +336,45 @@ Responda APENAS com JSON válido, sem markdown, neste formato:
 """
 
     payload = {
-        "model": _photo_ai_model(),
-        "input": [{
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": prompt},
-                {"type": "input_image", "image_url": data_url, "detail": "high"},
-            ],
+        "contents": [{
+            "parts": [
+                {
+                    "inlineData": {
+                        "mimeType": mime,
+                        "data": encoded_image,
+                    }
+                },
+                {
+                    "text": prompt
+                }
+            ]
         }],
-        "max_output_tokens": 5000,
+        "generationConfig": {
+            "temperature": 0.1,
+            "responseMimeType": "application/json"
+        }
     }
+    model = _photo_ai_model()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{_urlquote(model, safe='.-_')}:generateContent"
     r = _requests.post(
-        "https://api.openai.com/v1/responses",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        url,
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        },
         json=payload,
         timeout=90,
     )
     if not r.ok:
         msg = r.text[:900]
-        raise RuntimeError(f"Falha na leitura por IA ({r.status_code}): {msg}")
-    raw_text = _ai_response_text(r.json()).strip()
+        raise RuntimeError(f"Falha na leitura por Gemini ({r.status_code}): {msg}")
+
+    body = r.json()
+    raw_text = _ai_response_text(body).strip()
+    if not raw_text:
+        feedback = body.get("promptFeedback") if isinstance(body, dict) else None
+        raise RuntimeError(f"O Gemini não retornou conteúdo utilizável. Retorno: {feedback or 'sem detalhes'}")
+
     raw_text = _re.sub(r"^\s*```(?:json)?\s*", "", raw_text, flags=_re.I)
     raw_text = _re.sub(r"\s*```\s*$", "", raw_text)
     try:
@@ -360,7 +382,7 @@ Responda APENAS com JSON válido, sem markdown, neste formato:
     except Exception:
         match = _re.search(r"\{.*\}", raw_text, flags=_re.S)
         if not match:
-            raise RuntimeError("A IA respondeu, mas não retornou uma estrutura de itens válida.")
+            raise RuntimeError("O Gemini respondeu, mas não retornou uma estrutura de itens válida.")
         parsed = _json.loads(match.group(0))
 
     items = parsed.get("items", []) if isinstance(parsed, dict) else []
@@ -387,7 +409,6 @@ Responda APENAS com JSON válido, sem markdown, neste formato:
         except Exception:
             confidence = 0.75
 
-        # Se a IA repetir exatamente a mesma linha, consolida no primeiro registro.
         dedupe = (_norm(principal), _norm(alternative or ""), round(float(qty), 4), unit)
         if dedupe in seen:
             continue
@@ -404,7 +425,7 @@ Responda APENAS com JSON válido, sem markdown, neste formato:
             "category": category,
             "observation": observation,
             "confidence": confidence,
-            "source": "IA com visão",
+            "source": "Gemini com visão",
             "suggested": best.get("nome") if best else None,
             "score": score,
             "alt_suggested": alt_best.get("nome") if alt_best else None,
@@ -519,7 +540,7 @@ def _analyze_photo(file_bytes, mode, products):
     if should_use_ai:
         if not ai_key:
             if mode == "IA para manuscrito":
-                raise RuntimeError("Para usar visão por IA, configure OPENAI_API_KEY nos Secrets do Streamlit.")
+                raise RuntimeError("Para usar visão por IA, configure GEMINI_API_KEY nos Secrets do Streamlit.")
         else:
             try:
                 ai_candidates, ai_raw = _ai_extract_items(file_bytes, products)
@@ -527,9 +548,9 @@ def _analyze_photo(file_bytes, mode, products):
                     return {
                         "candidates": ai_candidates,
                         "text": local["text"],
-                        "engine": f"IA com visão · {_photo_ai_model()}",
+                        "engine": f"Gemini com visão · {_photo_ai_model()}",
                         "ocr_confidence": local["confidence"],
-                        "note": "A IA interpretou manuscrito, colunas, quantidades e alternativas. Revise antes de incluir.",
+                        "note": "O Gemini interpretou manuscrito, colunas, quantidades e alternativas. Revise antes de incluir.",
                         "ai_raw": ai_raw,
                     }
             except Exception as e:
@@ -574,9 +595,9 @@ def _photo_import_dialog():
         key="photo_read_mode",
     )
     if ai_available:
-        st.caption(f"Visão por IA disponível ({_photo_ai_model()}). No modo Automático ela só é usada quando o OCR local estiver fraco.")
+        st.caption(f"Gemini disponível ({_photo_ai_model()}). No modo Automático ele só é acionado quando o OCR local estiver fraco.")
     else:
-        st.caption("IA ainda não configurada. Automático usa OCR local até OPENAI_API_KEY ser adicionada aos Secrets.")
+        st.caption("Gemini ainda não configurado. Automático usa OCR local até GEMINI_API_KEY ser adicionada aos Secrets.")
 
     c1, c2 = st.columns(2)
     if c1.button("Cancelar", use_container_width=True, key="photo_cancel"):
