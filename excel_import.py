@@ -132,7 +132,7 @@ def build_excel(rows=(), template=False, num=float):
                 num(item.get("quantidade")) or 1,
                 safe(item.get("unidade") or "un."),
                 safe(item.get("categoria") or "Mercearia"),
-                safe(item.get("nome_alternativo") or item.get("alternativa") or ""),
+                safe(item.get("produto_alternativo") or item.get("alternativa") or ""),
                 "",
             ])
 
