@@ -45,12 +45,30 @@ def _urlopen_with_pending_groups(url, *args, **kwargs):
                 _last_category=_category
             if not _group_open:
                 continue
+        elif not _confirmed_open:
+            continue
         ok=bool(item.get("confirmado")); total=''' )
+    # Todos os produtos OK compartilham um único bloco recolhível.
+    old_confirm = (
+        '            if _status:\n'
+        '                st.markdown("### Confirmados")\n'
+        '                st.caption(f"{sum(bool(x.get(' + "'confirmado'" + ')) for x in current)} item(ns) já conferido(s)")'
+    )
+    new_confirm = '''            if _status:
+                _confirmed_count=sum(bool(x.get("confirmado")) for x in current)
+                _confirmed_key="compra_grupo_confirmados"
+                _confirmed_open=bool(st.session_state.get(_confirmed_key, False))
+                _confirmed_arrow="▼" if _confirmed_open else "▶"
+                if st.button(f"{_confirmed_arrow} OK · {_confirmed_count} item(ns) selecionado(s)",
+                             key="btn_compra_confirmados",use_container_width=True):
+                    st.session_state[_confirmed_key]=not _confirmed_open
+                    st.rerun()
+'''
     # A alteração é restrita ao bloco principal de compras, não ao trecho
     # de compatibilidade _group_patch definido na versão antiga.
-    if legacy.count(old_sort) != 1 or legacy.count(old_header) != 1:
+    if legacy.count(old_sort) != 1 or legacy.count(old_header) != 1 or legacy.count(old_confirm) != 1:
         raise RuntimeError("Não foi possível localizar o bloco original de agrupamento da lista.")
-    legacy=legacy.replace(old_sort,new_sort,1).replace(old_header,new_header,1)
+    legacy=legacy.replace(old_sort,new_sort,1).replace(old_confirm,new_confirm,1).replace(old_header,new_header,1)
     compile(legacy,"app_compra_agrupada.py","exec")
     return _group_io.BytesIO(legacy.encode("utf-8"))
 
