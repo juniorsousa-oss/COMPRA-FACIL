@@ -47,48 +47,6 @@ def _urlopen_with_pending_groups(url, *args, **kwargs):
     return _group_io.BytesIO(legacy.encode("utf-8"))
 
 
-# Os cards são agrupados no momento da compilação da tela da compra, depois
-# das personalizações pré-existentes de preço, alternativas e confirmação.
-# O mesmo expander é reutilizado para todos os itens pendentes da categoria.
-_compra_facil_original_compile = compile
-
-def _compile_with_collapsible_groups(code, filename, mode, *args, **kwargs):
-    group_header = '                st.markdown(f"#### {_category} · {_category_count} item(ns)")'
-    if filename == "app_original.py" and isinstance(code, str) and group_header in code:
-        import re as _collapse_re
-
-        if code.count(group_header) != 1:
-            raise RuntimeError("Cabeçalho de categorias duplicado na lista de compras.")
-        code = code.replace(
-            group_header,
-            '                _pending_group_container=st.expander('
-            'f"{_category} · {_category_count} pendente(s)",expanded=False)',
-            1,
-        )
-        start_pattern = r'^        ok=bool\(item\.get\("confirmado"\)\); total=.*$'
-        finish_line = "        st.markdown('</div>',unsafe_allow_html=True)"
-        start_match = _collapse_re.search(start_pattern, code, flags=_collapse_re.M)
-        if not start_match:
-            raise RuntimeError("Início do cartão de produto não encontrado.")
-        start = start_match.start()
-        finish = code.find(finish_line, start)
-        if finish < 0:
-            raise RuntimeError("Fim do cartão de produto não identificado.")
-        end = finish + len(finish_line)
-        original_cards = code[start:end]
-        indented_cards = "\n".join(
-            "    " + line if line.strip() else line
-            for line in original_cards.split("\n")
-        )
-        code = (
-            code[:start]
-            + "        with (_pending_group_container if not _status else st.container()):\n"
-            + indented_cards
-            + code[end:]
-        )
-    return _compra_facil_original_compile(code, filename, mode, *args, **kwargs)
-
-
 _original_button = st.button
 
 def _button_with_market(label, *args, **kwargs):
@@ -102,11 +60,9 @@ def _button_with_market(label, *args, **kwargs):
 # abrimos primeiro a identificação do supermercado.
 st.button = _button_with_market
 urllib.request.urlopen = _urlopen_with_pending_groups
-compile = _compile_with_collapsible_groups
 try:
     exec(compile(source, str(Path(__file__)), "exec"), globals(), globals())
 finally:
-    compile = _compra_facil_original_compile
     urllib.request.urlopen = _group_original_urlopen
     st.button = _original_button
 
