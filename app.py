@@ -6,6 +6,45 @@ import streamlit as st
 # do supermercado no momento da finalização da compra.
 BASE = "https://raw.githubusercontent.com/juniorsousa-oss/COMPRA-FACIL/1e4ada77cce7266f607ef7712c2714046ddecf6d/app.py"
 source = urllib.request.urlopen(BASE, timeout=10).read().decode("utf-8")
+import io as _group_io
+
+# Aplica somente na montagem da lista a organização por categoria dos pendentes.
+# As versões anteriores e a integração do Gemini continuam intactas.
+_group_original_urlopen = urllib.request.urlopen
+_group_legacy_ref = "0074e6f1fe2b4bfdee87793c6bff1fec391d35cc"
+
+def _urlopen_with_pending_groups(url, *args, **kwargs):
+    response = _group_original_urlopen(url, *args, **kwargs)
+    if _group_legacy_ref not in str(url) or not str(url).endswith("/app.py"):
+        return response
+    legacy = response.read().decode("utf-8")
+    old_sort = '    current=sorted(current,key=lambda x: bool(x.get("confirmado")))\\n    _last_status=None\\n    for item in current:'
+    new_sort = ('    current=sorted(current,key=lambda x: (bool(x.get("confirmado")), '
+                'str(x.get("categoria") or "Outros").strip().casefold(), '
+                'str(x.get("nome_produto") or "").casefold()))\\n'
+                '    _last_status=None\\n    _last_category=None\\n    for item in current:')
+    old_header = '            _last_status=_status\\n        ok=bool(item.get("confirmado")); total='
+    new_header = ('''            _last_status=_status
+            _last_category=None
+        if not _status:
+            _category=str(item.get("categoria") or "Outros").strip() or "Outros"
+            if _category.casefold()!=(_last_category or "").casefold():
+                _category_count=sum(
+                    not bool(x.get("confirmado")) and
+                    (str(x.get("categoria") or "Outros").strip() or "Outros").casefold()==_category.casefold()
+                    for x in current
+                )
+                st.markdown(f"#### {_category} · {_category_count} item(ns)")
+                _last_category=_category
+        ok=bool(item.get("confirmado")); total=''' )
+    # A alteração é restrita ao bloco principal de compras, não ao trecho
+    # de compatibilidade _group_patch definido na versão antiga.
+    if legacy.count(old_sort) != 1 or legacy.count(old_header) != 1:
+        raise RuntimeError("Não foi possível localizar o bloco original de agrupamento da lista.")
+    legacy=legacy.replace(old_sort,new_sort,1).replace(old_header,new_header,1)
+    compile(legacy,"app_compra_agrupada.py","exec")
+    return _group_io.BytesIO(legacy.encode("utf-8"))
+
 
 _original_button = st.button
 
@@ -19,9 +58,11 @@ def _button_with_market(label, *args, **kwargs):
 # Impede que o fluxo antigo finalize imediatamente. Ao clicar em finalizar,
 # abrimos primeiro a identificação do supermercado.
 st.button = _button_with_market
+urllib.request.urlopen = _urlopen_with_pending_groups
 try:
     exec(compile(source, str(Path(__file__)), "exec"), globals(), globals())
 finally:
+    urllib.request.urlopen = _group_original_urlopen
     st.button = _original_button
 
 
