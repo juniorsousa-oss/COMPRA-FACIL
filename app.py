@@ -18,12 +18,12 @@ def _urlopen_with_pending_groups(url, *args, **kwargs):
     if _group_legacy_ref not in str(url) or not str(url).endswith("/app.py"):
         return response
     legacy = response.read().decode("utf-8")
-    old_sort = '    current=sorted(current,key=lambda x: bool(x.get("confirmado")))\\n    _last_status=None\\n    for item in current:'
+    old_sort = '    current=sorted(current,key=lambda x: bool(x.get("confirmado")))\n    _last_status=None\n    for item in current:'
     new_sort = ('    current=sorted(current,key=lambda x: (bool(x.get("confirmado")), '
                 'str(x.get("categoria") or "Outros").strip().casefold(), '
-                'str(x.get("nome_produto") or "").casefold()))\\n'
-                '    _last_status=None\\n    _last_category=None\\n    for item in current:')
-    old_header = '            _last_status=_status\\n        ok=bool(item.get("confirmado")); total='
+                'str(x.get("nome_produto") or "").casefold()))\n'
+                '    _last_status=None\n    _last_category=None\n    for item in current:')
+    old_header = '            _last_status=_status\n        ok=bool(item.get("confirmado")); total='
     new_header = ('''            _last_status=_status
             _last_category=None
         if not _status:
