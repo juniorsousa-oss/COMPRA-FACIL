@@ -458,7 +458,7 @@ Responda APENAS com JSON válido, sem markdown, neste formato:
             "alt_suggested": alt_best.get("nome") if alt_best else None,
             "alt_score": alt_score,
         })
-    return candidates, raw_text
+    return candidates, raw_text, used_model
 
 
 def _convert_qty_for_product(qty, extracted_unit, product_unit):
