@@ -848,8 +848,21 @@ def _photo_import_dialog():
                 cat_index = categories.index(suggested_cat) if suggested_cat in categories else 0
                 new_cat = n2.selectbox("Categoria", categories, index=cat_index, key=f"ocr_cat_{i}")
                 new_unit = n3.text_input("Unidade", value=(candidate.get("unit") or "un."), key=f"ocr_unit_{i}")
+                new_alt_product = None
+                if candidate.get("alt_name"):
+                    alt_label = candidate.get("alt_suggested")
+                    if alt_label in names:
+                        if st.checkbox("Incluir alternativa cadastrada", value=True,
+                                       key=f"ocr_use_alt_new_{i}"):
+                            alt_idx = alt_options.index(alt_label) if alt_label in alt_options else 0
+                            alt_choice = st.selectbox("Produto alternativo", alt_options,
+                                                      index=alt_idx, key=f"ocr_alt_new_{i}")
+                            if alt_choice in names:
+                                new_alt_product = by_name.get(_norm(alt_choice))
+                    else:
+                        st.caption("A alternativa informada não está cadastrada; você poderá adicioná-la depois.")
                 if new_name.strip() and new_unit.strip():
-                    row = {"mode": "new", "name": new_name.strip(), "category": new_cat, "unit": new_unit.strip(), "qty": qty, "alt": None}
+                    row = {"mode": "new", "name": new_name.strip(), "category": new_cat, "unit": new_unit.strip(), "qty": qty, "alt": new_alt_product}
             elif chosen_product:
                 use_alt_default = bool(candidate.get("alt_name") or candidate.get("alt_suggested"))
                 use_alt = st.checkbox("Usar produto alternativo", value=use_alt_default, key=f"ocr_use_alt_{i}")
@@ -883,11 +896,13 @@ def _photo_import_dialog():
                                 continue
                             existing = globals()["find_product"](products, name)
                             if existing:
-                                ok = _photo_add_existing(existing, row["qty"])
+                                ok = _photo_add_existing(existing, row["qty"], row.get("alt"))
                             else:
                                 globals()["create_product"](name, row["category"], row["unit"], 0, row["qty"])
                                 globals()["clear"]()
-                                ok = globals()["add_item"](name, row["category"], row["unit"], row["qty"], 0)
+                                created = {"nome": name, "categoria": row["category"],
+                                           "unidade": row["unit"], "ultimo_preco": 0}
+                                ok = _photo_add_existing(created, row["qty"], row.get("alt"))
                             if ok is not False:
                                 current_keys.add(key)
                                 added += 1
