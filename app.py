@@ -105,12 +105,15 @@ def _photo_ai_key():
 
 def _photo_ai_model():
     import os as _os
+    default_model = "gemini-3.5-flash-lite"
     try:
-        return str(st.secrets.get("GEMINI_VISION_MODEL", _os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash-lite")) or "gemini-2.5-flash-lite").strip()
+        configured = str(st.secrets.get("GEMINI_VISION_MODEL", _os.getenv("GEMINI_VISION_MODEL", default_model)) or default_model).strip()
     except Exception:
-        return str(_os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash-lite") or "gemini-2.5-flash-lite").strip()
-
-
+        configured = str(_os.getenv("GEMINI_VISION_MODEL", default_model) or default_model).strip()
+    # Compatibilidade com configuração antiga já salva nos Secrets.
+    if configured == "gemini-2.5-flash-lite":
+        return default_model
+    return configured
 def _photo_preprocess(file_bytes, for_ai=False):
     """Corrige orientação e melhora a legibilidade sem persistir a imagem."""
     import io as _io
@@ -335,32 +338,29 @@ Responda APENAS com JSON válido, sem markdown, neste formato:
 }}
 """
 
-    payload = {
-        "contents": [{
-            "parts": [
-                {
-                    "inlineData": {
-                        "mimeType": mime,
-                        "data": encoded_image,
-                    }
-                },
-                {
-                    "text": prompt
-                }
-            ]
-        }],
-        "generationConfig": {
-            "temperature": 0.1,
-            "responseMimeType": "application/json"
-        }
-    }
     model = _photo_ai_model()
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{_urlquote(model, safe='.-_')}:generateContent"
+    payload = {
+        "model": model,
+        "input": [
+            {
+                "type": "image",
+                "data": encoded_image,
+                "mime_type": mime,
+            },
+            {
+                "type": "text",
+                "text": prompt,
+            },
+        ],
+    }
+    # A Interactions API é a interface recomendada para os modelos Gemini atuais.
+    url = "https://generativelanguage.googleapis.com/v1beta2/interactions"
     r = _requests.post(
         url,
         headers={
             "Content-Type": "application/json",
             "x-goog-api-key": api_key,
+            "Api-Revision": "2026-05-20",
         },
         json=payload,
         timeout=90,
@@ -370,10 +370,17 @@ Responda APENAS com JSON válido, sem markdown, neste formato:
         raise RuntimeError(f"Falha na leitura por Gemini ({r.status_code}): {msg}")
 
     body = r.json()
-    raw_text = _ai_response_text(body).strip()
+    texts = []
+    if isinstance(body, dict):
+        for step in body.get("steps", []) or []:
+            if not isinstance(step, dict) or step.get("type") != "model_output":
+                continue
+            for part in step.get("content", []) or []:
+                if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
+                    texts.append(str(part.get("text")))
+    raw_text = "\n".join(texts).strip()
     if not raw_text:
-        feedback = body.get("promptFeedback") if isinstance(body, dict) else None
-        raise RuntimeError(f"O Gemini não retornou conteúdo utilizável. Retorno: {feedback or 'sem detalhes'}")
+        raise RuntimeError("O Gemini respondeu, mas não retornou texto utilizável na Interactions API.")
 
     raw_text = _re.sub(r"^\s*```(?:json)?\s*", "", raw_text, flags=_re.I)
     raw_text = _re.sub(r"\s*```\s*$", "", raw_text)
