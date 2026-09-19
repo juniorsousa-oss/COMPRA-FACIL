@@ -505,7 +505,16 @@ def _analyze_photo(file_bytes, mode, products):
 
     should_use_ai = mode == "IA para manuscrito"
     if mode == "Automático":
-        should_use_ai = bool(ai_key) and (local["confidence"] < 72 or len(local_candidates) < 5)
+        match_scores = [float(x.get("score") or 0) for x in local_candidates]
+        match_quality = (sum(match_scores) / len(match_scores)) if match_scores else 0.0
+        strong_matches = sum(1 for x in match_scores if x >= 0.70)
+        strong_ratio = strong_matches / len(match_scores) if match_scores else 0.0
+        should_use_ai = bool(ai_key) and (
+            local["confidence"] < 75
+            or len(local_candidates) < 5
+            or match_quality < 0.68
+            or strong_ratio < 0.60
+        )
 
     if should_use_ai:
         if not ai_key:
