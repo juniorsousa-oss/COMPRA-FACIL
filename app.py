@@ -35,8 +35,16 @@ def _urlopen_with_pending_groups(url, *args, **kwargs):
                     (str(x.get("categoria") or "Outros").strip() or "Outros").casefold()==_category.casefold()
                     for x in current
                 )
-                st.markdown(f"#### {_category} · {_category_count} item(ns)")
+                _group_key=f"compra_pendente_grupo_{norm(_category)}"
+                _group_open=bool(st.session_state.get(_group_key,False))
+                _arrow="▼" if _group_open else "▶"
+                if st.button(f"{_arrow} {_category} · {_category_count} pendente(s)",
+                             key=f"btn_{_group_key}",use_container_width=True):
+                    st.session_state[_group_key]=not _group_open
+                    st.rerun()
                 _last_category=_category
+            if not _group_open:
+                continue
         ok=bool(item.get("confirmado")); total=''' )
     # A alteração é restrita ao bloco principal de compras, não ao trecho
     # de compatibilidade _group_patch definido na versão antiga.
