@@ -615,7 +615,7 @@ def _clear_ocr_state():
         "photo_import_requested", "photo_ocr_text", "photo_ocr_candidates",
         "photo_import_file", "photo_engine", "photo_ocr_confidence",
         "photo_engine_note", "photo_ai_raw", "excel_import_file",
-        "photo_import_kind", "photo_import_active_kind"
+        "photo_import_kind", "photo_import_active_kind", "photo_import_file_signature"
     ):
         st.session_state.pop(key, None)
     # Limpa também os widgets dinâmicos da revisão anterior.
@@ -724,6 +724,19 @@ def _photo_import_dialog():
             st.caption(f"Gemini disponível ({_photo_ai_model()}). No modo Automático ele só é acionado quando o OCR local estiver fraco.")
         else:
             st.caption("Gemini ainda não configurado. Automático usa OCR local até GEMINI_API_KEY ser adicionada aos Secrets.")
+
+    if uploaded is not None:
+        import hashlib as _import_hashlib
+        signature = (import_kind, _import_hashlib.sha256(uploaded.getvalue()).hexdigest())
+        if st.session_state.get("photo_import_file_signature") != signature:
+            for field in ("photo_ocr_text", "photo_ocr_candidates", "photo_engine",
+                          "photo_ocr_confidence", "photo_engine_note", "photo_ai_raw"):
+                st.session_state.pop(field, None)
+            for field in list(st.session_state):
+                if str(field).startswith(("ocr_product_", "ocr_qty_", "ocr_alt_", "ocr_use_alt_",
+                                          "ocr_new_", "ocr_cat_", "ocr_unit_")):
+                    st.session_state.pop(field, None)
+            st.session_state["photo_import_file_signature"] = signature
 
     c1, c2 = st.columns(2)
     if c1.button("Cancelar", use_container_width=True, key="photo_cancel"):
