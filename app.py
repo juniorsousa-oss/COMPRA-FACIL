@@ -338,49 +338,69 @@ Responda APENAS com JSON válido, sem markdown, neste formato:
 }}
 """
 
-    model = _photo_ai_model()
-    payload = {
-        "model": model,
-        "input": [
-            {
-                "type": "image",
-                "data": encoded_image,
-                "mime_type": mime,
-            },
-            {
-                "type": "text",
-                "text": prompt,
-            },
-        ],
-    }
-    # A Interactions API é a interface recomendada para os modelos Gemini atuais.
-    url = "https://generativelanguage.googleapis.com/v1beta2/interactions"
-    r = _requests.post(
-        url,
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": api_key,
-            "Api-Revision": "2026-05-20",
-        },
-        json=payload,
-        timeout=90,
-    )
-    if not r.ok:
-        msg = r.text[:900]
-        raise RuntimeError(f"Falha na leitura por Gemini ({r.status_code}): {msg}")
+    configured_model = _photo_ai_model()
+    model_candidates = []
+    for candidate_model in [configured_model, "gemini-3.6-flash", "gemini-3.5-flash-lite"]:
+        if candidate_model and candidate_model not in model_candidates:
+            model_candidates.append(candidate_model)
 
-    body = r.json()
-    texts = []
-    if isinstance(body, dict):
-        for step in body.get("steps", []) or []:
-            if not isinstance(step, dict) or step.get("type") != "model_output":
-                continue
-            for part in step.get("content", []) or []:
-                if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
-                    texts.append(str(part.get("text")))
-    raw_text = "\n".join(texts).strip()
+    payload = {
+        "contents": [{
+            "parts": [
+                {
+                    "inlineData": {
+                        "mimeType": mime,
+                        "data": encoded_image,
+                    }
+                },
+                {
+                    "text": prompt
+                }
+            ]
+        }],
+        "generationConfig": {
+            "responseMimeType": "application/json"
+        }
+    }
+
+    last_error = ""
+    raw_text = ""
+    used_model = ""
+    for model in model_candidates:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{_urlquote(model, safe='.-_')}:generateContent"
+        r = _requests.post(
+            url,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+            },
+            json=payload,
+            timeout=90,
+        )
+        if r.ok:
+            body = r.json()
+            raw_text = _ai_response_text(body).strip()
+            if raw_text:
+                used_model = model
+                break
+            last_error = f"{model}: resposta sem conteúdo utilizável."
+            continue
+
+        detail = (r.text or "").strip()
+        if len(detail) > 700:
+            detail = detail[:700] + "..."
+        last_error = f"{model}: HTTP {r.status_code}" + (f" — {detail}" if detail else "")
+
+        # 404 normalmente significa modelo/rota indisponível para a chave atual.
+        # Nesse caso tentamos automaticamente o próximo modelo estável.
+        if r.status_code not in (404, 400):
+            break
+
     if not raw_text:
-        raise RuntimeError("O Gemini respondeu, mas não retornou texto utilizável na Interactions API.")
+        raise RuntimeError(
+            "Nenhum modelo Gemini disponível conseguiu analisar a imagem. "
+            + (last_error or "Sem detalhes retornados pela API.")
+        )
 
     raw_text = _re.sub(r"^\s*```(?:json)?\s*", "", raw_text, flags=_re.I)
     raw_text = _re.sub(r"\s*```\s*$", "", raw_text)
@@ -550,12 +570,12 @@ def _analyze_photo(file_bytes, mode, products):
                 raise RuntimeError("Para usar visão por IA, configure GEMINI_API_KEY nos Secrets do Streamlit.")
         else:
             try:
-                ai_candidates, ai_raw = _ai_extract_items(file_bytes, products)
+                ai_candidates, ai_raw, ai_model = _ai_extract_items(file_bytes, products)
                 if ai_candidates:
                     return {
                         "candidates": ai_candidates,
                         "text": local["text"],
-                        "engine": f"Gemini com visão · {_photo_ai_model()}",
+                        "engine": f"Gemini com visão · {ai_model}",
                         "ocr_confidence": local["confidence"],
                         "note": "O Gemini interpretou manuscrito, colunas, quantidades e alternativas. Revise antes de incluir.",
                         "ai_raw": ai_raw,
