@@ -3,7 +3,7 @@ import io
 import unittest
 
 from openpyxl import Workbook
-from receipt_audit import amount, compare, money, price_model, read_prices_excel
+from receipt_audit import amount, compare, money, price_model, read_prices_excel, suggest_correction
 
 
 class ReceiptAuditTests(unittest.TestCase):
@@ -78,6 +78,26 @@ class ReceiptAuditTests(unittest.TestCase):
         result = compare(lines, current, {})
         self.assertEqual(result["results"][0]["status"], "Não encontrado no comprovante")
         self.assertEqual(result["extras"], ["Outra marca"])
+
+    def test_consolidar_repeticoes_sugestao(self):
+        rows = [
+            {"name": "Bebida láctea", "qty": "1", "unit_price": "1.09", "line_total": "1.09"},
+            {"name": "Bebida láctea", "qty": "1", "unit_price": "1.09", "line_total": "1.09"},
+            {"name": "Bebida láctea", "qty": "1", "unit_price": "1.09", "line_total": "1.09"},
+        ]
+        suggested = suggest_correction(rows, fallback_quantity=1, fallback_unit_price=2)
+        self.assertEqual(str(suggested["quantity"]), "3")
+        self.assertEqual(amount(suggested["unit_price"]), amount("1.09"))
+        self.assertEqual(amount(suggested["document_total"]), amount("3.27"))
+        self.assertEqual(suggested["alert"], "")
+
+    def test_sugestao_alerta_desconto_na_linha(self):
+        suggested = suggest_correction(
+            [{"name": "Produto", "qty": "2", "unit_price": "5.00", "line_total": "9.00"}],
+            fallback_quantity=2, fallback_unit_price=5,
+        )
+        self.assertTrue(suggested["alert"])
+        self.assertEqual(amount(suggested["document_total"]), amount("9.00"))
 
 
 if __name__ == "__main__":
