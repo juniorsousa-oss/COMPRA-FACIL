@@ -2,6 +2,7 @@ from pathlib import Path
 import urllib.request
 import streamlit as st
 from excel_import import parse_excel as _parse_excel_import, build_excel as _build_excel_export
+from receipt_edit_ui import render_price_editor as _receipt_render_editor
 from receipt_audit import (read_prices_excel as _receipt_read_excel, read_receipt_gemini as _receipt_read_gemini,
                            price_model as _receipt_price_model, compare as _receipt_compare,
                            money as _receipt_money, norm as _receipt_norm)
@@ -993,7 +994,7 @@ def _receipt_review_dialog():
 
     st.caption(
         "Compare os valores lançados com um comprovante de compra ou uma planilha com preços reais. "
-        "Esta conferência NÃO altera preços ou status da lista."
+        "Após conferir, você pode escolher quais itens atualizar na lista."
     )
     upload_type = st.radio(
         "Fonte dos preços reais",
@@ -1175,7 +1176,7 @@ def _receipt_review_dialog():
             f"{len(result['extras'])} linha(s) sem vínculo: "
             + ", ".join(result["extras"][:15])
         )
-    st.info("Confira os valores do cupom e selecione quais itens deseja corrigir na lista.")
+    _receipt_render_editor(receipt_lines, items, choices, signature, globals()["edit_item"])
 
 
 if st.session_state.get("finish_market_requested"):
