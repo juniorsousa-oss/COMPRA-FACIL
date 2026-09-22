@@ -313,3 +313,43 @@ def compare(lines, current, choices, grand_total=None):
             "linked_receipt_total": verified_total,
             "grand_total": amount(grand_total),
             "matched": len(lines) - len(extras)}
+
+
+def suggest_correction(receipt_lines, fallback_quantity, fallback_unit_price):
+    """Pré-preenche a revisão; nunca grava preços sem confirmação explícita."""
+    qties = [quantity(row.get("qty")) for row in receipt_lines]
+    doc_quantity = sum(qties) if qties and all(q is not None for q in qties) else None
+    line_totals = []
+    for row in receipt_lines:
+        total = amount(row.get("line_total"))
+        unit = amount(row.get("unit_price"))
+        q = quantity(row.get("qty"))
+        if total is None and unit is not None and q is not None:
+            total = (q * unit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        line_totals.append(total)
+    doc_total = sum(line_totals) if line_totals and all(x is not None for x in line_totals) else None
+    prices = [amount(row.get("unit_price")) for row in receipt_lines]
+    same_price = bool(prices) and all(p is not None and p == prices[0] for p in prices)
+    if same_price:
+        proposed_unit = prices[0]
+    elif doc_total is not None and doc_quantity is not None and doc_quantity > 0:
+        proposed_unit = (doc_total / doc_quantity).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    else:
+        proposed_unit = amount(fallback_unit_price)
+    proposed_qty = doc_quantity if doc_quantity is not None else quantity(fallback_quantity)
+    alert = ""
+    if doc_quantity is None:
+        alert = "Quantidade não identificada em todas as linhas: confira manualmente."
+    elif doc_total is None:
+        alert = "Total de uma ou mais linhas não identificado: confira manualmente."
+    elif proposed_unit is not None:
+        calculated = (proposed_qty * proposed_unit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if calculated != doc_total:
+            alert = ("O total do documento difere do preço unitário x quantidade "
+                     "(desconto, arredondamento ou leitura). Confira antes de gravar.")
+    return {
+        "quantity": proposed_qty,
+        "unit_price": proposed_unit,
+        "document_total": doc_total,
+        "alert": alert,
+    }
