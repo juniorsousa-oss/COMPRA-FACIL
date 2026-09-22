@@ -59,7 +59,7 @@ class ReceiptAuditTests(unittest.TestCase):
                   "unit_price": "20", "line_total": "6.90"}]
         result = compare(lines, current, {0: "7"})
         self.assertEqual(result["results"][0]["status"], "Confere")
-        self.assertEqual(str(result["app_confirmed_total"]), "6.9000")
+        self.assertEqual(amount(result["app_confirmed_total"]), amount("6.90"))
 
     def test_excel_sem_valores(self):
         book = Workbook()
