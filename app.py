@@ -1175,11 +1175,7 @@ def _receipt_review_dialog():
             f"{len(result['extras'])} linha(s) sem vínculo: "
             + ", ".join(result["extras"][:15])
         )
-    st.info(
-        "Nenhum valor foi modificado. Para corrigir um item, use Alterar no cartão do produto; "
-        "confira o cupom original antes de salvar. Produtos sem identificação ou pendentes "
-        "não são considerados conferidos."
-    )
+    st.info("Confira os valores do cupom e selecione quais itens deseja corrigir na lista.")
 
 
 if st.session_state.get("finish_market_requested"):
