@@ -1,0 +1,25 @@
+name: Validar Compra Facil
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app.py'
+      - 'receipt_audit.py'
+      - 'excel_import.py'
+      - 'tests/**'
+      - '.github/workflows/validate-receipt-audit.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias
+        run: python -m pip install -r requirements.txt
+      - name: Verificar sintaxe
+        run: python -m py_compile app.py excel_import.py receipt_audit.py
+      - name: Testes de conciliacao
+        run: python -m unittest discover -s tests -v
