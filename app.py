@@ -969,12 +969,20 @@ if "buy" in globals():
 
         st.divider()
         st.markdown("### Conferência dos preços reais")
-        st.caption(
-            "Envie uma foto/PDF do comprovante ou Excel com os preços reais "
-            "para identificar diferenças entre o documento e os valores registrados."
-        )
-        if st.button("Conferir preços reais", use_container_width=True,
-                     key="receipt_review_open"):
+        _compra_em_andamento = bool(globals().get("current", []))
+        if _compra_em_andamento:
+            st.caption(
+                "Envie uma foto/PDF do comprovante ou Excel com os preços reais "
+                "para identificar diferenças entre o documento e os valores registrados."
+            )
+        else:
+            st.caption("Inicie uma compra e adicione produtos à lista para habilitar a conferência dos preços reais.")
+        if st.button(
+            "Conferir preços reais",
+            use_container_width=True,
+            disabled=not _compra_em_andamento,
+            key="receipt_review_open",
+        ):
             st.session_state["receipt_review_requested"] = True
             st.rerun()
 
