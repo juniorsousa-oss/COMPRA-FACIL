@@ -2,6 +2,9 @@ from pathlib import Path
 import urllib.request
 import streamlit as st
 from excel_import import parse_excel as _parse_excel_import, build_excel as _build_excel_export
+from receipt_audit import (read_prices_excel as _receipt_read_excel, read_receipt_gemini as _receipt_read_gemini,
+                           price_model as _receipt_price_model, compare as _receipt_compare,
+                           money as _receipt_money, norm as _receipt_norm)
 
 # Mantém toda a versão já validada do app e acrescenta apenas a identificação
 # do supermercado no momento da finalização da compra.
@@ -963,8 +966,213 @@ if "buy" in globals():
             st.success(st.session_state.pop("photo_import_result"))
 
 
+        st.divider()
+        st.markdown("### Conferência dos preços reais")
+        st.caption(
+            "Envie uma foto/PDF do comprovante ou Excel com os preços reais "
+            "para identificar diferenças entre o documento e os valores registrados."
+        )
+        if st.button("Conferir preços reais", use_container_width=True,
+                     key="receipt_review_open"):
+            st.session_state["receipt_review_requested"] = True
+            st.rerun()
+
+
+
+@st.dialog("Conferir preços reais da compra", width="large")
+def _receipt_review_dialog():
+    import hashlib as _receipt_hashlib
+
+    items = globals().get("current", [])
+    if not items:
+        st.info("Não há uma lista em andamento. Faça a conferência antes de finalizar a compra.")
+        if st.button("Fechar", key="receipt_close_empty"):
+            st.session_state.pop("receipt_review_requested", None)
+            st.rerun()
+        return
+
+    st.caption(
+        "Compare os valores lançados com um comprovante de compra ou uma planilha com preços reais. "
+        "Esta conferência NÃO altera preços ou status da lista."
+    )
+    upload_type = st.radio(
+        "Fonte dos preços reais",
+        ["Foto / PDF do comprovante", "Excel (.xlsx)"],
+        horizontal=True, key="receipt_review_format",
+    )
+    if upload_type == "Foto / PDF do comprovante":
+        st.caption(
+            "A imagem ou PDF será enviado ao Gemini para leitura. "
+            "Revise os números transcritos: a IA pode confundir descontos, unidades e totais."
+        )
+        selected_file = st.file_uploader(
+            "Enviar cupom fiscal ou comprovante",
+            type=["jpg", "jpeg", "png", "webp", "pdf"],
+            key="receipt_review_photo_file",
+        )
+        if not _photo_ai_key():
+            st.warning("A chave GEMINI_API_KEY não está configurada. A conferência por Excel continua disponível.")
+    else:
+        st.caption(
+            "Preencha PRODUTO, QUANTIDADE e PREÇO UNITÁRIO PAGO e/ou TOTAL PAGO. "
+            "O arquivo é lido diretamente, sem Gemini."
+        )
+        selected_file = st.file_uploader(
+            "Enviar planilha de preços reais",
+            type=["xlsx"], key="receipt_review_excel_file",
+        )
+        st.download_button(
+            "Baixar modelo de preços reais com os itens da lista",
+            data=_receipt_price_model(items),
+            file_name="conferencia_precos_reais.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="receipt_review_model",
+        )
+
+    signature = (
+        upload_type,
+        _receipt_hashlib.sha256(selected_file.getvalue()).hexdigest()
+        if selected_file is not None else "",
+    )
+    if st.session_state.get("receipt_review_signature") != signature:
+        st.session_state["receipt_review_signature"] = signature
+        st.session_state.pop("receipt_review_data", None)
+        for state_key in list(st.session_state.keys()):
+            if str(state_key).startswith("receipt_link_"):
+                st.session_state.pop(state_key, None)
+
+    left, right = st.columns(2)
+    if left.button("Fechar", use_container_width=True, key="receipt_review_close"):
+        st.session_state.pop("receipt_review_requested", None)
+        st.session_state.pop("receipt_review_data", None)
+        st.rerun()
+
+    if right.button(
+        "Ler comprovante" if upload_type.startswith("Foto") else "Ler preços do Excel",
+        type="primary", use_container_width=True, key="receipt_review_read",
+    ):
+        if selected_file is None:
+            st.warning("Selecione um arquivo.")
+        else:
+            try:
+                raw = selected_file.getvalue()
+                with st.spinner("Lendo os preços reais..."):
+                    if upload_type.startswith("Foto"):
+                        if selected_file.name.lower().endswith(".pdf"):
+                            parsed = _receipt_read_gemini(
+                                raw, "application/pdf", _photo_ai_key(),
+                                [_photo_ai_model(), "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+                            )
+                        else:
+                            prepared, image_mime = _photo_preprocess(raw, for_ai=True)
+                            parsed = _receipt_read_gemini(
+                                prepared, image_mime, _photo_ai_key(),
+                                [_photo_ai_model(), "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+                            )
+                    else:
+                        parsed = _receipt_read_excel(raw)
+                st.session_state["receipt_review_data"] = parsed
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Não foi possível conferir o arquivo: {exc}")
+
+    parsed = st.session_state.get("receipt_review_data")
+    if not parsed:
+        return
+
+    receipt_lines = parsed.get("lines", [])
+    st.markdown("#### 1. Vincular produtos do documento à lista")
+    st.caption(
+        "Apenas nomes idênticos são vinculados automaticamente. "
+        "Confira os nomes, a quantidade e os valores; escolha manualmente o produto se necessário."
+    )
+    if parsed.get("warning"):
+        st.warning(parsed["warning"])
+    st.caption(f"Origem: {parsed.get('source', 'Arquivo')} · {len(receipt_lines)} linha(s) com preços")
+
+    # O vínculo por ID impede que um produto com nome semelhante receba o preço de outro.
+    options = ["— Não vincular —"] + [str(item["id"]) for item in items]
+    items_by_id = {str(item["id"]): item for item in items}
+    choices = {}
+    signature_short = signature[1][:12]
+    for index, line in enumerate(receipt_lines):
+        line_price = _receipt_money(line.get("unit_price"))
+        line_total = _receipt_money(line.get("line_total"))
+        with st.container(border=True):
+            st.markdown(f"**{index + 1}. {line['name']}**")
+            st.caption(
+                f"Qtd. documento: {line.get('qty') or 'não identificada'}"
+                f"  ·  Preço unitário: {line_price}"
+                f"  ·  Total da linha: {line_total}"
+            )
+            exact = [
+                str(item["id"]) for item in items
+                if _receipt_norm(item.get("produto_escolhido") or item.get("nome_produto"))
+                == _receipt_norm(line["name"])
+            ]
+            default_choice = exact[0] if len(exact) == 1 else options[0]
+            selected = st.selectbox(
+                "Corresponde ao item da lista",
+                options,
+                index=options.index(default_choice),
+                format_func=lambda value: (
+                    value if value == options[0] else
+                    f"{items_by_id[value].get('produto_escolhido') or items_by_id[value].get('nome_produto')} "
+                    f"· {items_by_id[value].get('quantidade')} "
+                    f"{items_by_id[value].get('unidade', 'un.')} "
+                    f"· {'OK' if items_by_id[value].get('confirmado') else 'Pendente'}"
+                ),
+                key=f"receipt_link_{signature_short}_{index}",
+            )
+            if selected != options[0]:
+                choices[index] = selected
+
+    result = _receipt_compare(receipt_lines, items, choices, parsed.get("grand_total"))
+    st.markdown("#### 2. Resultado da conferência")
+    statuses = [row["status"] for row in result["results"]]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Conferem", sum(status == "Confere" for status in statuses))
+    c2.metric("Diferenças", sum(status in (
+        "Total divergente", "Quantidade diferente", "Preço unitário divergente"
+    ) for status in statuses))
+    c3.metric("Não identificados", len(result["extras"]) + statuses.count("Não encontrado no comprovante"))
+    st.caption(
+        f"Total já confirmado no aplicativo: {_receipt_money(result['app_confirmed_total'])} "
+        f"· Soma dos produtos vinculados no documento: {_receipt_money(result['linked_receipt_total'])}"
+    )
+    if result.get("grand_total") is not None:
+        st.caption(
+            "Total final informado pelo documento: "
+            f"{_receipt_money(result['grand_total'])}. "
+            "Descontos gerais, taxas ou produtos sem vínculo podem explicar diferenças entre os totais."
+        )
+    rows = [{
+        "Produto": entry["produto"], "Conferência": entry["status"],
+        "Qtd. app": entry["qtd_app"], "Qtd. documento": entry["qtd_doc"],
+        "Unit. app": entry["preco_app"], "Unit. documento": entry["preco_doc"],
+        "Total app": entry["total_app"], "Total documento": entry["total_doc"],
+        "Diferença": entry["diferenca"],
+    } for entry in result["results"]]
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+    if result["extras"]:
+        st.warning(
+            f"{len(result['extras'])} linha(s) sem vínculo: "
+            + ", ".join(result["extras"][:15])
+        )
+    st.info(
+        "Nenhum valor foi modificado. Para corrigir um item, use Alterar no cartão do produto; "
+        "confira o cupom original antes de salvar. Produtos sem identificação ou pendentes "
+        "não são considerados conferidos."
+    )
+
+
 if st.session_state.get("finish_market_requested"):
     _market_dialog()
 
 if st.session_state.get("photo_import_requested"):
     _photo_import_dialog()
+
+if st.session_state.get("receipt_review_requested"):
+    _receipt_review_dialog()
