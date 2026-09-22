@@ -73,6 +73,15 @@ def _compile_grouped_buy(source_code, filename, mode, *args, **kwargs):
     updated=(source_code.replace(old_sort,new_sort,1)
                         .replace(old_confirm,new_confirm,1)
                         .replace(old_header,new_header,1))
+    # Mostra o subtotal efetivamente pago de cada item OK sem alterar o
+    # preço unitário, a quantidade ou qualquer valor persistido no banco.
+    paid_price_line = '            if ok: st.caption("Preço pago"); st.write(money(item.get("preco_unitario")))'
+    if updated.count(paid_price_line) == 1:
+        paid_price_with_total = '''            if ok:
+                st.caption("Preço pago")
+                st.write(money(item.get("preco_unitario")))
+                st.markdown(f"**Total pago: {money(num(item.get('quantidade')) * num(item.get('preco_unitario')))}**")'''
+        updated = updated.replace(paid_price_line, paid_price_with_total, 1)
     return _compra_compile_original(updated, filename, mode, *args, **kwargs)
 
 
