@@ -256,7 +256,7 @@ def compare(lines, current, choices, grand_total=None):
     results = []
     verified_total = Decimal("0.00")
     app_confirmed_total = sum(
-        (amount(item.get("quantidade")) or Decimal(0)) * (amount(item.get("preco_unitario")) or Decimal(0))
+        (quantity(item.get("quantidade")) or Decimal(0)) * (amount(item.get("preco_unitario")) or Decimal(0))
         for item in current if item.get("confirmado")
     )
     for key, item in by_id.items():
