@@ -1142,11 +1142,25 @@ def _receipt_review_dialog():
         f"· Soma dos produtos vinculados no documento: {_receipt_money(result['linked_receipt_total'])}"
     )
     if result.get("grand_total") is not None:
+        from decimal import Decimal as _receipt_decimal
+        receipt_total_delta = (
+            result["grand_total"] - result["app_confirmed_total"]
+        ).quantize(_receipt_decimal("0.01"))
         st.caption(
             "Total final informado pelo documento: "
             f"{_receipt_money(result['grand_total'])}. "
             "Descontos gerais, taxas ou produtos sem vínculo podem explicar diferenças entre os totais."
         )
+        if receipt_total_delta:
+            st.warning(
+                "Diferença entre o total final do documento e o total confirmado no aplicativo: "
+                f"{_receipt_money(receipt_total_delta)}. Confira também produtos pendentes, "
+                "descontos e taxas antes de concluir."
+            )
+        elif all(item.get("confirmado") for item in items) and (
+            not result["extras"] and all(row["status"] == "Confere" for row in result["results"])
+        ):
+            st.success("O total final do documento confere com todos os itens confirmados.")
     rows = [{
         "Produto": entry["produto"], "Conferência": entry["status"],
         "Qtd. app": entry["qtd_app"], "Qtd. documento": entry["qtd_doc"],
