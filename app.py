@@ -795,8 +795,15 @@ def _photo_import_dialog():
             st.code(ai_raw[:9000], language="json")
 
     if candidates:
-        st.markdown("#### Revisar itens encontrados")
-        st.caption("Nada entra na lista sem sua confirmação. Produtos alternativos reconhecidos com 'ou' também podem ser revisados.")
+        if engine == "Excel":
+            st.markdown("#### Resultado da correspondência")
+            st.caption(
+                "Itens com correspondência exata de 100% são vinculados automaticamente. "
+                "Somente divergências precisam de validação."
+            )
+        else:
+            st.markdown("#### Revisar itens encontrados")
+            st.caption("Nada entra na lista sem sua confirmação. Produtos alternativos reconhecidos com 'ou' também podem ser revisados.")
         names = [p.get("nome", "") for p in products if p.get("nome")]
         by_name = {_norm(p.get("nome")): p for p in products}
         categories = sorted(set(
