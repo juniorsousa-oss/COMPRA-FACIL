@@ -807,9 +807,57 @@ def _photo_import_dialog():
         ))
         options = ["— Ignorar —", "— Selecionar produto —", "— Cadastrar como novo —"] + names
         alt_options = ["— Sem alternativa —"] + names
-        selected_rows = []
 
-        for i, candidate in enumerate(candidates):
+        # No Excel, correspondência exata não precisa de revisão item a item.
+        # O parser só preenche "suggested" quando find_product encontra igualdade
+        # normalizada de 100% (mesmo produto, desconsiderando caixa/acentos).
+        auto_rows = []
+        review_candidates = []
+        if engine == "Excel":
+            for _candidate_index, _candidate in enumerate(candidates):
+                _main_name = _candidate.get("suggested")
+                _main_product = by_name.get(_norm(_main_name)) if _main_name else None
+                _has_alt = bool(str(_candidate.get("alt_name") or "").strip())
+                _alt_name = _candidate.get("alt_suggested")
+                _alt_product = by_name.get(_norm(_alt_name)) if _alt_name else None
+
+                # Se houver alternativa escrita no Excel, ela também precisa ter
+                # correspondência exata para o item inteiro ser automático.
+                if _main_product and (not _has_alt or _alt_product):
+                    _qty = float(_candidate.get("qty") or 1)
+                    _qty = _convert_qty_for_product(
+                        _qty, _candidate.get("unit"), _main_product.get("unidade")
+                    )
+                    auto_rows.append({
+                        "mode": "existing",
+                        "product": _main_product,
+                        "qty": max(float(_qty), 0.001),
+                        "alt": _alt_product if _has_alt else None,
+                    })
+                else:
+                    review_candidates.append((_candidate_index, _candidate))
+        else:
+            review_candidates = list(enumerate(candidates))
+
+        if engine == "Excel" and auto_rows:
+            st.success(
+                f"{len(auto_rows)} item(ns) com correspondência exata de 100% "
+                "já foram vinculados automaticamente."
+            )
+        if engine == "Excel" and review_candidates:
+            st.warning(
+                f"{len(review_candidates)} item(ns) precisam da sua validação "
+                "porque não tiveram correspondência exata de 100%."
+            )
+        elif engine == "Excel" and not review_candidates:
+            st.caption(
+                "Todos os itens tiveram correspondência exata. "
+                "Você só precisa confirmar a inclusão da lista."
+            )
+
+        selected_rows = list(auto_rows)
+
+        for i, candidate in review_candidates:
             confidence = candidate.get("confidence")
             conf_label = f" · confiança IA {float(confidence):.0%}" if confidence is not None else ""
             st.markdown(f"**Reconhecido:** {candidate.get('raw') or candidate.get('name')}{conf_label}")
@@ -881,9 +929,10 @@ def _photo_import_dialog():
                 selected_rows.append(row)
             st.divider()
 
-        if st.button("Adicionar itens selecionados", type="primary", use_container_width=True, key="ocr_add_selected"):
+        _add_label = "Adicionar itens à lista" if engine == "Excel" else "Adicionar itens selecionados"
+        if st.button(_add_label, type="primary", use_container_width=True, key="ocr_add_selected"):
             if not selected_rows:
-                st.warning("Selecione pelo menos um produto.")
+                st.warning("Nenhum item válido foi selecionado para inclusão.")
             else:
                 try:
                     current_keys = {_norm(x.get("nome_produto")) for x in current}
