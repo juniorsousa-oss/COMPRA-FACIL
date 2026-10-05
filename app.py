@@ -934,9 +934,80 @@ def _photo_import_dialog():
         st.warning("A planilha não apresentou itens válidos." if engine == "Excel" else "Não encontrei itens suficientes. Tente IA para manuscrito ou envie uma foto mais próxima e nítida.")
 
 
+def _clear_current_cart():
+    """Remove toda a lista atual sem afetar catálogo ou histórico."""
+    globals()["db"]("lista_atual", "DELETE", params={"id": "gt.0"})
+    globals()["save_budget"](0)
+    globals()["clear"]()
+    for _key in list(st.session_state.keys()):
+        if _key == "compra_grupo_confirmados" or _key.startswith("compra_pendente_grupo_"):
+            st.session_state.pop(_key, None)
+
+
+@st.dialog("Limpar carrinho")
+def _clear_cart_dialog():
+    _items = globals().get("current", [])
+    if not _items:
+        st.info("O carrinho já está vazio.")
+        if st.button("Fechar", use_container_width=True, key="clear_cart_close_empty"):
+            st.session_state.pop("clear_cart_requested", None)
+            st.rerun()
+        return
+
+    _confirmed = sum(bool(x.get("confirmado")) for x in _items)
+    _pending = len(_items) - _confirmed
+    st.warning(
+        f"Serão removidos {len(_items)} item(ns) do carrinho "
+        f"({_pending} pendente(s) e {_confirmed} confirmado(s))."
+    )
+    st.caption(
+        "Essa ação limpa somente a compra em andamento e zera o orçamento atual. "
+        "O cadastro de produtos e o histórico de compras finalizadas não serão alterados."
+    )
+
+    _cancel, _confirm = st.columns(2)
+    if _cancel.button("Cancelar", use_container_width=True, key="clear_cart_cancel"):
+        st.session_state.pop("clear_cart_requested", None)
+        st.rerun()
+
+    if _confirm.button(
+        "Limpar tudo",
+        type="primary",
+        use_container_width=True,
+        key="clear_cart_confirm",
+    ):
+        try:
+            _clear_current_cart()
+            st.session_state.pop("clear_cart_requested", None)
+            st.session_state["clear_cart_result"] = "Carrinho limpo com sucesso."
+            st.rerun()
+        except Exception as e:
+            st.error(f"Não foi possível limpar o carrinho: {e}")
+
+
+if st.session_state.get("clear_cart_requested"):
+    _clear_cart_dialog()
+
+
 # A funcionalidade fica dentro da aba Compra sem interferir nos fluxos já validados.
 if "buy" in globals():
     with globals()["buy"]:
+        _cart_items = globals().get("current", [])
+        _clear_col, _clear_info = st.columns([1, 2])
+        if _clear_col.button(
+            "Limpar carrinho",
+            use_container_width=True,
+            disabled=not bool(_cart_items),
+            key="open_clear_cart",
+        ):
+            st.session_state["clear_cart_requested"] = True
+            st.rerun()
+        _clear_info.caption(
+            "Remove de uma vez todos os itens da compra em andamento, sem apagar o histórico."
+        )
+        if st.session_state.get("clear_cart_result"):
+            st.success(st.session_state.pop("clear_cart_result"))
+
         st.divider()
         st.markdown("### Importar lista por foto ou Excel")
         st.caption("Envie uma foto para leitura pelo Gemini ou importe diretamente uma planilha Excel.")
