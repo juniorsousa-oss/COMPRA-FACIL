@@ -772,12 +772,16 @@ def _photo_import_dialog():
     note = st.session_state.get("photo_engine_note", "")
 
     if engine:
+        # Evita st.metric neste modal: em alguns navegadores móveis o componente
+        # tenta carregar um chunk JS dinâmico e pode exibir
+        # "TypeError: Importing a module script failed" mesmo após a leitura ter
+        # sido concluída corretamente.
         m1, m2 = st.columns(2)
-        m1.metric("Origem", engine)
+        m1.markdown(f"**Origem**  \\n{engine}")
         if engine == "Excel":
-            m2.metric("Itens identificados", len(candidates))
+            m2.markdown(f"**Itens identificados**  \\n{len(candidates)}")
         else:
-            m2.metric("Confiança OCR local", f"{ocr_conf:.0f}%")
+            m2.markdown(f"**Confiança OCR local**  \\n{ocr_conf:.0f}%")
         if note:
             st.info(note)
 
